@@ -1,0 +1,1 @@
+ALTER TABLE public.clients RENAME COLUMN send_sms_webhook_url TO send_message_webhook_url;

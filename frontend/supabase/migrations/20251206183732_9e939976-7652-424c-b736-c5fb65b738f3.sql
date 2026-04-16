@@ -1,0 +1,1 @@
+DELETE FROM prompts WHERE id = '32d76844-18e8-47a8-b9c2-d6d1f3a31b33';

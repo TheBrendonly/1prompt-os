@@ -1,0 +1,1 @@
+ALTER TABLE public.dm_executions ADD COLUMN IF NOT EXISTS setter_messages jsonb DEFAULT NULL;

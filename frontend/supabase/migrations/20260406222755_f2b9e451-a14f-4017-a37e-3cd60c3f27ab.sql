@@ -1,0 +1,2 @@
+-- Restore Setter-1 configuration from full prompt (Geno/Eugene AI clone for 1Prompt)
+-- Read the SQL from the generated file

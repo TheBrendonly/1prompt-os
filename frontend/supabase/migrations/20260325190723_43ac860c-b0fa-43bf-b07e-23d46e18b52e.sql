@@ -1,0 +1,1 @@
+ALTER TABLE public.custom_metrics ADD COLUMN IF NOT EXISTS widget_width text NOT NULL DEFAULT 'half';

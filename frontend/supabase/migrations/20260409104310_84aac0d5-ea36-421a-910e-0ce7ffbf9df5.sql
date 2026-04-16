@@ -1,0 +1,2 @@
+ALTER TABLE followup_timers ADD COLUMN IF NOT EXISTS sequence_index INTEGER DEFAULT 1;
+ALTER TABLE agent_settings ADD COLUMN IF NOT EXISTS followup_max_attempts INTEGER DEFAULT 1;

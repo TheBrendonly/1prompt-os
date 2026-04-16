@@ -1,0 +1,1 @@
+ALTER TABLE public.agent_settings ADD COLUMN IF NOT EXISTS last_deployed_prompt TEXT DEFAULT NULL;

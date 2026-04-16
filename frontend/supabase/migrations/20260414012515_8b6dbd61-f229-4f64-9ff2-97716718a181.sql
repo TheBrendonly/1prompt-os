@@ -1,0 +1,1 @@
+ALTER TABLE public.call_history ADD COLUMN IF NOT EXISTS pre_call_context JSONB DEFAULT NULL;

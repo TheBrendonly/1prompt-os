@@ -1,0 +1,1 @@
+ALTER TABLE public.leads ADD COLUMN IF NOT EXISTS phone_valid boolean NOT NULL DEFAULT true;

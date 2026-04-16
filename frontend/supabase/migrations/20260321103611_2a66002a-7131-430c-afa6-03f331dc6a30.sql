@@ -1,0 +1,1 @@
+ALTER TABLE public.prompt_versions ADD COLUMN IF NOT EXISTS original_prompt_content text;

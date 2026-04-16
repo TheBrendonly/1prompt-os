@@ -1,0 +1,1 @@
+ALTER TABLE public.clients ADD COLUMN IF NOT EXISTS crm_column_widths jsonb DEFAULT NULL;

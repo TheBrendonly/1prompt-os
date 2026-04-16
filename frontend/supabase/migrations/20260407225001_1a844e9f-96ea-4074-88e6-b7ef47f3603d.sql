@@ -1,0 +1,1 @@
+ALTER TABLE public.clients ADD COLUMN IF NOT EXISTS log_column_widths JSONB DEFAULT NULL;

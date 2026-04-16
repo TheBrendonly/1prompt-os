@@ -1,0 +1,1 @@
+ALTER TABLE public.clients ADD COLUMN IF NOT EXISTS stop_bot_webhook_url TEXT DEFAULT NULL;

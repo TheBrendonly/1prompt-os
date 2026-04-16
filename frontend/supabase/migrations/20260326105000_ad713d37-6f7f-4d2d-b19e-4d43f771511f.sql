@@ -1,0 +1,1 @@
+ALTER TABLE public.agent_settings ADD COLUMN IF NOT EXISTS booking_function_enabled boolean DEFAULT false;

@@ -1,0 +1,1 @@
+ALTER TABLE public.clients DROP COLUMN text_engine_followup_webhook;

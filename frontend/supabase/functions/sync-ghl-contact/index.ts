@@ -1,0 +1,268 @@
+import "jsr:@supabase/functions-js/edge-runtime.d.ts";
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2.49.1";
+
+const corsHeaders = {
+  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Headers":
+    "authorization, x-client-info, apikey, content-type, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version",
+};
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function firstNonEmptyString(...values: unknown[]): string | undefined {
+  for (const value of values) {
+    if (typeof value === "string") {
+      const trimmed = value.trim();
+      if (trimmed) return trimmed;
+    }
+    if (typeof value === "number") {
+      return String(value);
+    }
+  }
+  return undefined;
+}
+
+async function parseRequestBody(req: Request): Promise<Record<string, unknown>> {
+  const contentType = req.headers.get("content-type")?.toLowerCase() ?? "";
+  try {
+    if (contentType.includes("application/json")) {
+      const parsed = await req.clone().json();
+      return isRecord(parsed) ? parsed : {};
+    }
+    if (contentType.includes("application/x-www-form-urlencoded") || contentType.includes("multipart/form-data")) {
+      const formData = await req.clone().formData();
+      return Object.fromEntries(
+        Array.from(formData.entries()).map(([key, value]) => [key, typeof value === "string" ? value : value.name])
+      );
+    }
+    const raw = await req.clone().text();
+    if (!raw.trim()) return {};
+    try {
+      const parsed = JSON.parse(raw);
+      if (isRecord(parsed)) return parsed;
+    } catch { /* fall through */ }
+    const params = new URLSearchParams(raw);
+    if (Array.from(params.keys()).length > 0) {
+      return Object.fromEntries(params.entries());
+    }
+  } catch { /* ignore */ }
+  return {};
+}
+
+interface Step {
+  id: string;
+  label: string;
+  node_type: string;
+  status: "completed" | "failed" | "skipped";
+  detail?: string;
+  timestamp: string;
+}
+
+function makeStep(id: string, label: string, nodeType: string, status: Step["status"], detail?: string): Step {
+  return { id, label, node_type: nodeType, status, detail, timestamp: new Date().toISOString() };
+}
+
+Deno.serve(async (req) => {
+  if (req.method === "OPTIONS") {
+    return new Response(null, { headers: corsHeaders });
+  }
+
+  try {
+    const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
+    const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+    const supabase = createClient(supabaseUrl, serviceKey);
+
+    const url = new URL(req.url);
+    const body = await parseRequestBody(req);
+    const contact = isRecord(body.contact) ? body.contact : isRecord(body.Contact) ? body.Contact : {};
+    const location = isRecord(body.location) ? body.location : isRecord(body.Location) ? body.Location : {};
+
+    const derivedFirstName = firstNonEmptyString(
+      url.searchParams.get("First_Name"), body.First_Name, body.first_name, body.firstName,
+      contact.First_Name, contact.first_name, contact.firstName,
+    );
+    const derivedLastName = firstNonEmptyString(
+      url.searchParams.get("Last_Name"), body.Last_Name, body.last_name, body.lastName,
+      contact.Last_Name, contact.last_name, contact.lastName,
+    );
+    const derivedName = [derivedFirstName, derivedLastName].filter(Boolean).join(" ").trim();
+
+    const ghlAccountId = firstNonEmptyString(
+      url.searchParams.get("GHL_Account_ID"), url.searchParams.get("ghl_account_id"),
+      url.searchParams.get("ghlAccountId"), url.searchParams.get("locationId"),
+      body.GHL_Account_ID, body.ghl_account_id, body.ghlAccountId, body.locationId, body.location_id,
+      location.id, location.locationId, location.location_id,
+    );
+    const contactId = firstNonEmptyString(
+      url.searchParams.get("Lead_ID"), url.searchParams.get("lead_id"), url.searchParams.get("leadId"),
+      url.searchParams.get("Contact_ID"), url.searchParams.get("contact_id"), url.searchParams.get("contactId"),
+      body.Lead_ID, body.lead_id, body.leadId,
+      body.Contact_ID, body.contact_id, body.contactId,
+      contact.id, contact.lead_id, contact.leadId, contact.contact_id, contact.contactId,
+    );
+    const name = firstNonEmptyString(
+      url.searchParams.get("Name"), url.searchParams.get("name"),
+      body.Name, body.name, contact.Name, contact.name, derivedName,
+    );
+    const email = firstNonEmptyString(
+      url.searchParams.get("Email"), url.searchParams.get("email"),
+      body.Email, body.email, contact.Email, contact.email,
+    );
+    const phone = firstNonEmptyString(
+      url.searchParams.get("Phone"), url.searchParams.get("phone"),
+      body.Phone, body.phone, body.phone_number, body.phoneNumber,
+      contact.Phone, contact.phone, contact.phone_number, contact.phoneNumber,
+    );
+
+    async function logExecution(
+      clientId: string | null, externalId: string, contactName: string | null,
+      status: string, errorMessage: string | null, steps: Step[],
+    ) {
+      if (!clientId) return;
+      try {
+        await supabase.from("sync_ghl_executions").insert({
+          client_id: clientId, external_id: externalId, contact_name: contactName,
+          status, error_message: errorMessage, steps,
+        });
+      } catch (e) {
+        console.error("[sync-ghl-contact] Failed to log execution:", e);
+      }
+    }
+
+    if (!ghlAccountId) {
+      return new Response(
+        JSON.stringify({ error: "GHL_Account_ID is required in the webhook fields or request body" }),
+        { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
+    if (!contactId) {
+      return new Response(
+        JSON.stringify({ error: "Lead_ID is required in the webhook fields or request body" }),
+        { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
+
+    const steps: Step[] = [];
+    steps.push(makeStep("sync-trigger", "Receive New Lead", "trigger", "completed",
+      `GHL Account: ${ghlAccountId}, Lead: ${contactId}`));
+
+    const { data: clientRow, error: clientErr } = await supabase
+      .from("clients")
+      .select("id, sync_ghl_enabled")
+      .eq("ghl_location_id", ghlAccountId)
+      .single();
+
+    if (clientErr || !clientRow) {
+      steps.push(makeStep("sync-find", "Find Lead in 1Prompt", "find", "failed",
+        `No client found for GHL_Account_ID: ${ghlAccountId}`));
+      return new Response(
+        JSON.stringify({ error: "No client found for the provided GHL_Account_ID" }),
+        { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
+
+    const clientId = clientRow.id;
+
+    if (!clientRow.sync_ghl_enabled) {
+      steps.push(makeStep("sync-find", "Find Lead in 1Prompt", "find", "completed", `Client: ${clientId}`));
+      steps.push(makeStep("sync-disabled", "Sync Disabled", "condition", "failed", "Workflow is disabled for this client"));
+      await logExecution(clientId, contactId, name || null, "disabled", "Sync is disabled for this client", steps);
+      return new Response(
+        JSON.stringify({ status: "disabled", message: "Sync GHL Contacts is disabled for this client" }),
+        { headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
+
+    // Check if contact already exists
+    const { data: existingContact } = await supabase
+      .from("leads")
+      .select("id")
+      .eq("client_id", clientId)
+      .eq("lead_id", contactId)
+      .maybeSingle();
+
+    steps.push(makeStep("sync-find", "Find Lead in 1Prompt", "find", "completed",
+      existingContact ? `Found: ${existingContact.id}` : "Not found"));
+    steps.push(makeStep("sync-condition", "Does Lead Exist?", "condition", "completed",
+      existingContact ? "Yes → Update" : "No → Create"));
+
+    // Split name into first/last if individual names not provided
+    let firstName = derivedFirstName || "";
+    let lastName = derivedLastName || "";
+    if (!firstName && !lastName && name) {
+      const parts = name.trim().split(/\s+/);
+      firstName = parts[0] || "";
+      lastName = parts.length > 1 ? parts.slice(1).join(" ") : "";
+    }
+
+    const updatePayload: Record<string, any> = {
+      updated_at: new Date().toISOString(),
+    };
+    if (firstName) updatePayload.first_name = firstName;
+    if (lastName) updatePayload.last_name = lastName;
+    if (email) updatePayload.email = email;
+    if (phone) updatePayload.phone = phone;
+
+    if (existingContact) {
+      const { error: updateErr } = await supabase
+        .from("leads")
+        .update(updatePayload)
+        .eq("id", existingContact.id);
+
+      if (updateErr) {
+        steps.push(makeStep("sync-update", "Update Lead", "update_contact", "failed", updateErr.message));
+        steps.push(makeStep("sync-create", "Create New Lead", "create_contact", "skipped"));
+        await logExecution(clientId, contactId, name || null, "failed", updateErr.message, steps);
+        return new Response(
+          JSON.stringify({ error: "Failed to update contact" }),
+          { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        );
+      }
+
+      steps.push(makeStep("sync-update", "Update Lead", "update_contact", "completed", `Updated ${existingContact.id}`));
+      steps.push(makeStep("sync-create", "Create New Lead", "create_contact", "skipped"));
+      await logExecution(clientId, contactId, name || null, "updated", null, steps);
+      return new Response(
+        JSON.stringify({ status: "updated", contact_id: existingContact.id }),
+        { headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    } else {
+      const { data: newContact, error: createErr } = await supabase
+        .from("leads")
+        .insert({
+          client_id: clientId,
+          lead_id: contactId,
+          first_name: firstName || null,
+          last_name: lastName || null,
+          phone: phone || null,
+          email: email || null,
+        })
+        .select("id")
+        .single();
+
+      if (createErr) {
+        steps.push(makeStep("sync-create", "Create New Lead", "create_contact", "failed", createErr.message));
+        await logExecution(clientId, contactId, name || null, "failed", createErr.message, steps);
+        return new Response(
+          JSON.stringify({ error: "Failed to create contact" }),
+          { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        );
+      }
+
+      steps.push(makeStep("sync-create", "Create New Lead", "create_contact", "completed", `Created ${newContact.id}`));
+      await logExecution(clientId, contactId, name || null, "created", null, steps);
+      return new Response(
+        JSON.stringify({ status: "created", contact_id: newContact.id }),
+        { headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
+  } catch (error: any) {
+    console.error("Sync GHL contact error:", error);
+    return new Response(
+      JSON.stringify({ error: error.message || "Internal server error" }),
+      { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+    );
+  }
+});

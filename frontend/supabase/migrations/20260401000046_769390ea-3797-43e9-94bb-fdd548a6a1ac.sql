@@ -1,0 +1,1 @@
+ALTER TABLE public.clients RENAME COLUMN ghl_send_reply_webhook_url TO ghl_send_setter_reply_webhook_url;

@@ -1,0 +1,1 @@
+ALTER TABLE public.clients ADD COLUMN supabase_access_token text DEFAULT NULL;

@@ -1,0 +1,1427 @@
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Lock elastic/rubber-band overscroll globally (macOS bounce) */
+html, body {
+  overscroll-behavior: none;
+}
+
+/* ============================================
+   RETRO CONSOLE DESIGN SYSTEM — VT323 · IBM Plex Mono · Flat · Terminal
+   ============================================ */
+
+@layer base {
+  :root {
+    /* Mono Design System — warm off-white palette */
+    --background: 40 7% 96%;
+    --foreground: 60 4% 7%;
+
+    --card: 0 0% 100%;
+    --card-foreground: 60 4% 7%;
+
+    --popover: 0 0% 100%;
+    --popover-foreground: 60 4% 7%;
+
+    --primary: 60 4% 7%;
+    --primary-foreground: 0 0% 100%;
+
+    --secondary: 37 8% 95%;
+    --secondary-foreground: 30 3% 42%;
+
+    --muted: 37 8% 95%;
+    --muted-foreground: 28 4% 64%;
+
+    --accent: 33 6% 93%;
+    --accent-foreground: 60 4% 7%;
+
+    --destructive: 0 67% 33%;
+    --destructive-foreground: 0 0% 100%;
+
+    --success: 153 40% 30%;
+    --success-foreground: 0 0% 100%;
+
+    --warning: 33 100% 31%;
+    --warning-foreground: 0 0% 100%;
+
+    --border: 33 5% 87%;
+    --border-groove: 33 5% 80%;
+    --input: 33 5% 87%;
+    --ring: 60 4% 7%;
+    --cyan-accent: 190 80% 50%;
+
+    --radius: 0px;
+
+    /* Custom tokens */
+    --sidebar: 0 0% 100%;
+    --sidebar-foreground: 60 4% 7%;
+    --surface: 0 0% 100%;
+    --surface-variant: 37 8% 95%;
+    --on-surface: 60 4% 7%;
+    --on-surface-variant: 30 3% 42%;
+    --outline: 33 5% 87%;
+
+    /* Retro-specific tokens */
+    --border-strong: 30 4% 78%;
+    --border-focus: 60 4% 7%;
+    --text-primary: #111110;
+    --text-secondary: #6B6963;
+    --text-muted: #A8A39D;
+    --text-disabled: #C8C5C0;
+    --text-inverse: #FFFFFF;
+    --accent-soft-raw: #F0EDE8;
+    --surface-raw: #FFFFFF;
+    --bg-raw: #F7F6F3;
+  }
+
+  :root.dark {
+    /* Navy Dark — custom palette */
+    --background: 224 30% 12%;
+    --foreground: 220 15% 88%;
+
+    --card: 226 28% 16%;
+    --card-foreground: 220 15% 88%;
+
+    --popover: 226 28% 16%;
+    --popover-foreground: 220 15% 88%;
+
+    --primary: 220 15% 88%;
+    --primary-foreground: 224 30% 12%;
+
+    --secondary: 224 28% 13%;
+    --secondary-foreground: 220 12% 62%;
+
+    --muted: 224 28% 13%;
+    --muted-foreground: 220 12% 46%;
+
+    --accent: 226 25% 18%;
+    --accent-foreground: 220 15% 88%;
+
+    --destructive: 4 48% 41%;
+    --destructive-foreground: 220 15% 88%;
+
+    --success: 153 35% 38%;
+    --success-foreground: 220 15% 88%;
+
+    --warning: 33 80% 45%;
+    --warning-foreground: 222 33% 12%;
+
+    --border: 222 22% 25%;
+    --border-groove: 222 22% 35%;
+    --input: 222 22% 25%;
+    --ring: 220 15% 88%;
+    --cyan-accent: 190 80% 50%;
+
+    /* Custom tokens — dark navy */
+    --sidebar: 224 24% 13%;
+    --sidebar-foreground: 220 15% 88%;
+    --surface: 226 28% 16%;
+    --surface-variant: 224 30% 12%;
+    --on-surface: 220 15% 88%;
+    --on-surface-variant: 220 12% 62%;
+    --outline: 224 22% 22%;
+
+    --border-strong: 224 20% 28%;
+    --border-focus: 220 15% 88%;
+    --text-primary: #D6DAE4;
+    --text-secondary: #919AAD;
+    --text-muted: #646E82;
+    --text-disabled: #3D4860;
+    --text-inverse: #141D2E;
+    --accent-soft-raw: #2A3550;
+    --surface-raw: #1c2235;
+    --bg-raw: #151a28;
+  }
+}
+
+@layer base {
+  /* Global resets */
+  *, *::before, *::after {
+    @apply border-border;
+    border-radius: 0px !important;
+    font-variant-ligatures: none;
+    font-feature-settings: "liga" 0, "calt" 0;
+  }
+
+  body {
+    @apply bg-background text-foreground;
+    font-family: 'IBM Plex Mono', monospace;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    text-rendering: optimizeLegibility;
+    font-size: 14px !important;
+    line-height: 1.6 !important;
+  }
+
+  /* Scanline overlay */
+  body::before {
+    content: '';
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    pointer-events: none;
+    z-index: 9999;
+    background: repeating-linear-gradient(
+      0deg,
+      transparent,
+      transparent 2px,
+      rgba(0, 0, 0, 0.025) 2px,
+      rgba(0, 0, 0, 0.025) 4px
+    );
+  }
+
+  /* Force correct font sizes against CDN overrides */
+  .text-xs  { font-size: 12px !important; font-family: 'IBM Plex Mono', monospace !important; }
+  .text-sm  { font-size: 13px !important; font-family: 'IBM Plex Mono', monospace !important; }
+  .text-base { font-size: 14px !important; font-family: 'IBM Plex Mono', monospace !important; }
+  .text-md  { font-size: 15px !important; font-family: 'IBM Plex Mono', monospace !important; }
+  .text-lg  { font-size: 28px !important; font-family: 'VT323', monospace !important; text-transform: uppercase !important; }
+  .text-xl  { font-size: 24px !important; font-family: 'VT323', monospace !important; text-transform: uppercase !important; }
+  .text-2xl { font-size: 32px !important; font-family: 'VT323', monospace !important; text-transform: uppercase !important; }
+  .text-3xl { font-size: 42px !important; font-family: 'VT323', monospace !important; text-transform: uppercase !important; }
+
+  /* Pixel icon spinner — pixelarticons Loader is static, animate via CSS */
+  .animate-spin {
+    animation: spin 1s linear infinite !important;
+  }
+
+  /* Global: IBM Plex Mono never gets letter-spacing unless explicitly opted in */
+  [style*="IBM Plex Mono"]:not(.ibm-spacing-allow):not(.section-separator),
+  .font-mono:not(.ibm-spacing-allow):not(.section-separator) {
+    letter-spacing: 0 !important;
+  }
+
+  .ibm-spacing-allow[style*="IBM Plex Mono"],
+  .ibm-spacing-allow {
+    letter-spacing: 2px !important;
+  }
+
+  .section-separator,
+  .sidebar-section-label,
+  .section-separator .section-separator-count,
+  .text-label {
+    letter-spacing: 2px !important;
+  }
+
+  /* Headings — VT323 display font */
+  h1, h2, h3, h4, h5, h6 {
+    font-family: 'VT323', monospace !important;
+    letter-spacing: 0.5px;
+    font-weight: 400;
+    text-transform: uppercase;
+  }
+
+  /* Dialog/AlertDialog titles — VT323 18px UPPERCASE */
+  [role="dialog"] h2,
+  [role="alertdialog"] h2 {
+    font-family: 'VT323', monospace !important;
+    font-size: 18px !important;
+    text-transform: uppercase !important;
+    font-weight: 400 !important;
+    letter-spacing: 0.5px !important;
+  }
+
+  /* Thin scrollbars */
+  ::-webkit-scrollbar {
+    width: 4px;
+    height: 4px;
+  }
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  ::-webkit-scrollbar-thumb {
+    background: hsl(var(--border-strong));
+    border-radius: 9999px;
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    background: var(--text-muted);
+  }
+
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: hsl(var(--border-strong)) transparent;
+  }
+}
+
+@layer components {
+  /* Retro typography utility classes */
+  .font-display {
+    font-family: 'VT323', monospace !important;
+    text-transform: uppercase;
+  }
+
+  .font-body {
+    font-family: 'IBM Plex Mono', monospace !important;
+  }
+
+  /* Field text — 13px IBM Plex Mono for form labels, inputs, descriptions, and buttons in dialogs */
+  .field-text {
+    font-family: 'IBM Plex Mono', monospace !important;
+    font-size: 13px !important;
+    font-weight: 400 !important;
+    text-transform: none !important;
+    letter-spacing: normal !important;
+  }
+
+  .text-wordmark {
+    font-family: 'VT323', monospace;
+    font-size: 18px;
+    font-weight: 400;
+    letter-spacing: 1px;
+    text-transform: uppercase;
+  }
+
+  .text-nav {
+    font-family: 'VT323', monospace;
+    font-size: 18px;
+    font-weight: 400;
+    letter-spacing: 0.5px;
+    text-transform: uppercase;
+  }
+
+  .text-label {
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 12px;
+    font-weight: 500;
+    letter-spacing: 0;
+    text-transform: uppercase;
+    color: var(--text-muted);
+  }
+
+  .text-body {
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 13px;
+    font-weight: 400;
+    line-height: 1.6;
+  }
+
+  .text-stat {
+    font-family: 'VT323', monospace;
+    font-size: 40px;
+    font-weight: 400;
+    letter-spacing: 1px;
+    line-height: 1;
+    text-transform: uppercase;
+  }
+
+  .text-mono-id {
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 12px;
+    color: var(--text-muted);
+  }
+
+  /* Badge variants */
+  .badge-mono {
+    display: inline-block;
+    padding: 2px 8px;
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 12px;
+    font-weight: 500;
+    letter-spacing: 1.5px;
+    text-transform: uppercase;
+    border: 1px solid currentColor;
+    line-height: 1.6;
+    white-space: nowrap;
+  }
+  .badge-mono-green  { color: #2D6A4F; }
+  .badge-mono-amber  { color: #A05C00; }
+  .badge-mono-red    { color: #8B1A1A; }
+  .badge-mono-muted  { color: var(--text-muted); border-color: hsl(var(--border)); }
+  .badge-mono-blue   { color: #1A3A6B; }
+
+  :root.dark .badge-mono-green,
+  :root.dark .badge-mono-amber,
+  :root.dark .badge-mono-red,
+  :root.dark .badge-mono-muted,
+  :root.dark .badge-mono-blue {
+    color: #FFFFFF;
+  }
+
+  /* Stat cells */
+  .stat-row {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 0;
+  }
+  .stat-cell {
+    padding: 20px 20px 16px;
+    background: hsl(var(--card));
+    border: 3px groove hsl(var(--border-groove));
+    margin-right: -2px;
+    margin-bottom: -2px;
+  }
+
+  /* Cards */
+  .modern-card {
+    @apply bg-card;
+    border: 3px groove hsl(var(--border-groove));
+    @apply p-4 sm:p-6;
+  }
+
+  .modern-button-primary {
+    @apply groove-btn groove-btn-primary;
+  }
+
+  .modern-button-secondary {
+    @apply groove-btn;
+  }
+
+  .modern-button-destructive {
+    @apply groove-btn groove-btn-destructive;
+  }
+
+  .modern-input {
+    @apply bg-card transition-all duration-100 placeholder:text-muted-foreground groove-border;
+    font-family: 'VT323', monospace;
+    font-size: 16px;
+    @apply px-3 py-2 sm:px-4 sm:py-3;
+  }
+
+  .modern-textarea {
+    @apply bg-card transition-all duration-100 resize-none placeholder:text-muted-foreground groove-border;
+    font-family: 'VT323', monospace;
+    font-size: 16px;
+    @apply px-3 py-2 sm:px-4 sm:py-3;
+  }
+
+  /* Mobile Navigation */
+  .mobile-nav-header {
+    @apply fixed top-0 left-0 right-0 z-50 bg-background/95 border-b border-border;
+    @apply px-4 py-3 sm:px-6 sm:py-4;
+  }
+
+  .mobile-nav-content {
+    @apply pt-16 sm:pt-20;
+  }
+
+  .mobile-container {
+    @apply px-4 sm:px-6 lg:px-8 mx-auto max-w-7xl;
+  }
+
+  .mobile-grid {
+    @apply grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-6;
+  }
+
+  /* Mobile Typography */
+  .mobile-heading-1 {
+    font-family: 'VT323', monospace;
+    @apply text-2xl sm:text-3xl;
+    font-weight: 400;
+    letter-spacing: 0.5px;
+  }
+
+  .mobile-heading-2 {
+    font-family: 'VT323', monospace;
+    @apply text-xl sm:text-2xl;
+    font-weight: 400;
+    letter-spacing: 0.5px;
+  }
+
+  .mobile-heading-3 {
+    font-family: 'VT323', monospace;
+    @apply text-lg sm:text-xl;
+    font-weight: 400;
+    letter-spacing: 0.5px;
+  }
+
+  .mobile-text {
+    @apply text-sm sm:text-base;
+  }
+
+  .mobile-text-small {
+    @apply text-xs sm:text-sm;
+  }
+
+  .mobile-section-padding {
+    @apply py-6 sm:py-8 lg:py-12;
+  }
+
+  .mobile-card-spacing {
+    @apply space-y-4 sm:space-y-6;
+  }
+
+  .mobile-dialog {
+    @apply w-[95vw] sm:w-auto sm:max-w-md md:max-w-lg;
+  }
+
+  .mobile-form-group {
+    @apply space-y-2 sm:space-y-3;
+  }
+
+  .mobile-form-grid {
+    @apply grid grid-cols-1 sm:grid-cols-2 gap-4 sm:gap-6;
+  }
+
+  .gradient-bg {
+    background: hsl(var(--background));
+  }
+
+  .hero-gradient {
+    background: hsl(var(--primary));
+  }
+
+  .glass-effect {
+    @apply bg-card;
+    border: 3px groove hsl(var(--border-groove));
+  }
+
+  .dark .glass-effect {
+    @apply bg-card;
+    border: 3px groove hsl(var(--border-groove));
+  }
+
+  .animate-scale-in {
+    animation: scale-in 0.12s ease-out;
+  }
+
+  .animate-slide-up {
+    animation: slide-up 0.12s ease-out;
+  }
+
+  .text-gradient {
+    color: hsl(var(--foreground));
+  }
+
+  .mobile-hide {
+    @apply hidden sm:block;
+  }
+
+  .mobile-show {
+    @apply block sm:hidden;
+  }
+
+  .mobile-flex-col {
+    @apply flex flex-col sm:flex-row;
+  }
+
+  .mobile-text-center {
+    @apply text-center sm:text-left;
+  }
+
+  .mobile-items-center {
+    @apply items-center sm:items-start;
+  }
+
+  .mobile-touch {
+    @apply min-h-[44px] min-w-[44px];
+  }
+
+  .mobile-button-full {
+    @apply w-full sm:w-auto;
+  }
+
+  .mobile-scroll {
+    @apply overflow-x-auto sm:overflow-visible;
+  }
+
+  .mobile-table {
+    @apply min-w-full sm:min-w-0;
+  }
+
+  .line-clamp-2 {
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+  }
+
+  /* Chat message styling */
+  .prose code:not(pre code) {
+    background-color: hsl(var(--muted));
+    padding: 0.125rem 0.25rem;
+    font-size: 0.875em;
+    font-family: 'IBM Plex Mono', monospace;
+  }
+  
+  .prose pre {
+    background-color: hsl(var(--muted));
+    border: 1px solid hsl(var(--border));
+    font-family: 'IBM Plex Mono', monospace;
+  }
+  
+  .prose blockquote {
+    border-left-color: hsl(var(--primary));
+  }
+
+  /* Pulsating blue animation for fields to COPY */
+  @keyframes pulse-blue {
+    0%, 100% {
+      border-color: hsl(217 91% 60% / 0.5);
+      box-shadow: 0 0 0 0 hsl(217 91% 60% / 0.4);
+    }
+    50% {
+      border-color: hsl(217 91% 60%);
+      box-shadow: 0 0 8px 2px hsl(217 91% 60% / 0.3);
+    }
+  }
+
+  @keyframes pulse-blue-button {
+    0%, 100% {
+      border-color: hsl(217 91% 60% / 0.7);
+      background-color: hsl(217 91% 60% / 0.05);
+    }
+    50% {
+      border-color: hsl(217 91% 60%);
+      background-color: hsl(217 91% 60% / 0.15);
+    }
+  }
+
+  @keyframes pulse-bright-blue {
+    0%, 100% {
+      background-color: hsl(217 91% 60%);
+      box-shadow: 0 0 0 0 hsl(217 91% 60% / 0.7), 0 10px 15px -3px hsl(217 91% 60% / 0.4);
+      transform: scale(1);
+    }
+    50% {
+      background-color: hsl(217 91% 65%);
+      box-shadow: 0 0 20px 4px hsl(217 91% 60% / 0.5), 0 10px 20px -3px hsl(217 91% 60% / 0.5);
+      transform: scale(1.02);
+    }
+  }
+
+  /* Pulsating green animation */
+  @keyframes pulse-green {
+    0%, 100% {
+      border-color: hsl(142 71% 45% / 0.5);
+      box-shadow: 0 0 0 0 hsl(142 71% 45% / 0.4);
+    }
+    50% {
+      border-color: hsl(142 71% 45%);
+      box-shadow: 0 0 8px 2px hsl(142 71% 45% / 0.3);
+    }
+  }
+
+  @keyframes pulse-green-button {
+    0%, 100% {
+      border-color: hsl(142 71% 45% / 0.7);
+      background-color: hsl(142 71% 45% / 0.05);
+    }
+    50% {
+      border-color: hsl(142 71% 45%);
+      background-color: hsl(142 71% 45% / 0.15);
+    }
+  }
+
+  @keyframes pulse-bright-green {
+    0%, 100% {
+      background-color: hsl(142 71% 45%);
+      box-shadow: 0 0 0 0 hsl(142 71% 45% / 0.7), 0 10px 15px -3px hsl(142 71% 45% / 0.4);
+      transform: scale(1);
+    }
+    50% {
+      background-color: hsl(142 76% 50%);
+      box-shadow: 0 0 20px 4px hsl(142 71% 45% / 0.5), 0 10px 20px -3px hsl(142 71% 45% / 0.5);
+      transform: scale(1.02);
+    }
+  }
+
+  /* Pulsating red animation */
+  @keyframes pulse-red {
+    0%, 100% {
+      border-color: hsl(0 72% 51% / 0.5);
+      box-shadow: 0 0 0 0 hsl(0 72% 51% / 0.4);
+    }
+    50% {
+      border-color: hsl(0 72% 51%);
+      box-shadow: 0 0 8px 2px hsl(0 72% 51% / 0.3);
+    }
+  }
+
+  @keyframes pulse-red-button {
+    0%, 100% {
+      border-color: hsl(0 72% 51% / 0.7);
+      background-color: hsl(0 72% 51% / 0.05);
+    }
+    50% {
+      border-color: hsl(0 72% 51%);
+      background-color: hsl(0 72% 51% / 0.15);
+    }
+  }
+
+  /* Ticker animation */
+  @keyframes ticker-scroll {
+    0% { transform: translateX(0); }
+    100% { transform: translateX(-50%); }
+  }
+
+  .animate-pulse-blue {
+    animation: pulse-blue 2s ease-in-out infinite;
+  }
+
+  .animate-pulse-blue-button {
+    animation: pulse-blue-button 2s ease-in-out infinite;
+  }
+
+  .animate-pulse-bright-blue {
+    animation: pulse-bright-blue 1.5s ease-in-out infinite;
+  }
+
+  .animate-pulse-green {
+    animation: pulse-green 2s ease-in-out infinite;
+  }
+
+  .animate-pulse-green-button {
+    animation: pulse-green-button 2s ease-in-out infinite;
+  }
+
+  .animate-pulse-bright-green {
+    animation: pulse-bright-green 1.5s ease-in-out infinite;
+  }
+
+  .animate-pulse-red {
+    animation: pulse-red 2s ease-in-out infinite;
+  }
+
+  .animate-pulse-red-button {
+    animation: pulse-red-button 2s ease-in-out infinite;
+  }
+
+  /* Universal section separator — label + dashed line */
+  .section-separator {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 13px;
+    font-weight: 500;
+    letter-spacing: 2px;
+    text-transform: uppercase;
+    color: hsl(var(--muted-foreground));
+    margin-right: -24px;
+  }
+
+  .section-separator::after {
+    content: '';
+    flex: 1;
+    border-top: 1px dashed hsl(var(--border));
+  }
+
+  .section-separator .section-separator-count {
+    font-size: 10px;
+    font-weight: 400;
+    letter-spacing: 1px;
+    order: 1;
+  }
+
+  /* Sidebar retro section labels — inherits from section-separator */
+  .sidebar-section-label {
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 13px;
+    font-weight: 500;
+    letter-spacing: 2px;
+    text-transform: uppercase;
+    color: hsl(var(--muted-foreground));
+    padding: 8px 0 4px 12px;
+    margin-right: -8px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .sidebar-section-label::after {
+    content: '';
+    flex: 1;
+    border-top: 1px dashed hsl(var(--border));
+  }
+
+  /* Sidebar nav item retro style */
+  .sidebar-nav-item {
+    font-family: 'VT323', monospace !important;
+    font-size: 18px !important;
+    letter-spacing: 0.5px;
+    text-transform: uppercase !important;
+  }
+}
+
+/* Select dropdown default styling */
+[data-radix-popper-content-wrapper] * {
+  font-family: 'IBM Plex Mono', monospace !important;
+  font-size: 13px !important;
+  font-weight: 400 !important;
+  letter-spacing: 0 !important;
+}
+
+[data-radix-popper-content-wrapper] .terminal-tag {
+  font-family: 'VT323', monospace !important;
+  font-size: 14px !important;
+  font-weight: 400 !important;
+  letter-spacing: 1.5px !important;
+  text-transform: uppercase !important;
+}
+
+.csv-column-mapper-select-trigger {
+  font-family: 'IBM Plex Mono', monospace !important;
+  font-size: 13px !important;
+  font-weight: 400 !important;
+  letter-spacing: normal !important;
+  text-transform: none !important;
+}
+
+[data-radix-popper-content-wrapper] .csv-column-mapper-select-content {
+  border: 1px solid hsl(var(--border)) !important;
+  background: hsl(var(--sidebar)) !important;
+  font-family: 'IBM Plex Mono', monospace !important;
+  font-size: 13px !important;
+  font-weight: 400 !important;
+  letter-spacing: normal !important;
+  text-transform: none !important;
+}
+
+[data-radix-popper-content-wrapper] .csv-column-mapper-select-item:not(.csv-column-mapper-create-btn),
+[data-radix-popper-content-wrapper] .csv-column-mapper-select-item:not(.csv-column-mapper-create-btn) * {
+  font-family: 'IBM Plex Mono', monospace !important;
+  font-size: 13px !important;
+  font-weight: 400 !important;
+  letter-spacing: normal !important;
+  text-transform: none !important;
+  cursor: pointer !important;
+}
+
+/* Retro pixel checkmark for CSV mapper select items */
+[data-radix-popper-content-wrapper] .csv-column-mapper-select-item:not(.csv-column-mapper-create-btn) [data-state="checked"] svg {
+  display: none !important;
+}
+[data-radix-popper-content-wrapper] .csv-column-mapper-select-item:not(.csv-column-mapper-create-btn) [data-state="checked"]::after {
+  content: '';
+  display: block;
+  width: 12px;
+  height: 12px;
+  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 16 15' fill='%23fff' xmlns='http://www.w3.org/2000/svg' shape-rendering='crispEdges'%3E%3Crect x='1' y='5' width='3' height='3'/%3E%3Crect x='3' y='7' width='3' height='3'/%3E%3Crect x='5' y='9' width='3' height='3'/%3E%3Crect x='7' y='7' width='3' height='3'/%3E%3Crect x='9' y='5' width='3' height='3'/%3E%3Crect x='11' y='3' width='3' height='3'/%3E%3C/svg%3E");
+  background-size: contain;
+  background-repeat: no-repeat;
+}
+
+/* Visible scrollbar for CSV mapper select dropdowns */
+[data-radix-popper-content-wrapper] .csv-column-mapper-select-content [data-radix-select-viewport] {
+  max-height: 280px !important;
+  overflow-y: auto !important;
+  scrollbar-width: thin !important;
+  scrollbar-color: hsl(var(--border)) transparent !important;
+}
+[data-radix-popper-content-wrapper] .csv-column-mapper-select-content [data-radix-select-viewport]::-webkit-scrollbar {
+  width: 4px !important;
+  display: block !important;
+}
+[data-radix-popper-content-wrapper] .csv-column-mapper-select-content [data-radix-select-viewport]::-webkit-scrollbar-thumb {
+  background: hsl(var(--border)) !important;
+  border-radius: 9999px !important;
+}
+
+[data-radix-popper-content-wrapper] .csv-column-mapper-tag-popover,
+[data-radix-popper-content-wrapper] .csv-column-mapper-tag-popover * {
+  text-transform: none !important;
+  letter-spacing: normal !important;
+}
+
+[data-radix-popper-content-wrapper] .csv-column-mapper-tag-row {
+  font-family: 'IBM Plex Mono', monospace !important;
+  font-size: 13px !important;
+}
+
+[data-radix-popper-content-wrapper] .csv-column-mapper-tag-badge,
+[data-radix-popper-content-wrapper] .csv-column-mapper-tag-badge * {
+  font-family: 'IBM Plex Mono', monospace !important;
+  font-size: 11px !important;
+  font-weight: 500 !important;
+  text-transform: none !important;
+  letter-spacing: normal !important;
+}
+
+/* Workflow popovers keep original source casing inside the Radix popover */
+[data-radix-popper-content-wrapper] .workflow-node-menu-option-label,
+[data-radix-popper-content-wrapper] .workflow-node-menu-option-description,
+[data-radix-popper-content-wrapper] .variable-picker-popover,
+[data-radix-popper-content-wrapper] .variable-picker-popover * {
+  text-transform: none !important;
+}
+
+/* Force all status badges to bright green bg + dark text/stroke */
+@layer components {
+  .bg-green-500.text-white,
+  .bg-green-600.text-white,
+  .bg-green-500:not(.text-white) {
+    background-color: hsl(142 71% 45%) !important;
+    color: hsl(var(--foreground)) !important;
+    border: 1px solid hsl(var(--foreground)) !important;
+  }
+}
+
+/* Force bg-success/20 badges to bright green */
+@layer components {
+  [class*="bg-success/20"][class*="border-foreground"] {
+    background-color: hsl(142 71% 45%) !important;
+  }
+}
+
+/* Force destructive badges */
+@layer components {
+  [class*="bg-destructive/20"][class*="border-foreground"] {
+    border-color: hsl(var(--foreground)) !important;
+    color: hsl(var(--foreground)) !important;
+  }
+}
+
+  /* Normalize border-2 to match standard 1px borders */
+@layer utilities {
+  .border-2 {
+    border-width: 1px !important;
+  }
+  .border {
+    border-width: 1px !important;
+  }
+}
+
+/* ============================================
+   GROOVE BORDER SYSTEM
+   Outer containers = 2px groove
+   Internal dividers = 1px dashed (unchanged)
+   ============================================ */
+@layer components {
+  /* Bright scanline overlay for dark header/ticker */
+  .scanline-bright {
+    position: relative;
+  }
+  .scanline-bright::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    z-index: 1;
+    background: repeating-linear-gradient(
+      0deg,
+      transparent,
+      transparent 2px,
+      rgba(255, 255, 255, 0.016) 2px,
+      rgba(255, 255, 255, 0.016) 4px
+    );
+  }
+
+  /* Dimmer scanline for PageHeader only (20% less visible than scanline-bright) */
+  .scanline-header {
+    position: relative;
+  }
+  .scanline-header::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    z-index: 1;
+    background: repeating-linear-gradient(
+      0deg,
+      transparent,
+      transparent 2px,
+      rgba(255, 255, 255, 0.010) 2px,
+      rgba(255, 255, 255, 0.010) 4px
+    );
+  }
+
+[data-radix-popper-content-wrapper] .csv-column-mapper-create-btn,
+[data-radix-popper-content-wrapper] .csv-column-mapper-create-btn * {
+  font-family: 'VT323', monospace !important;
+  font-size: 16px !important;
+  font-weight: 700 !important;
+  text-transform: uppercase !important;
+  letter-spacing: 1px !important;
+  background: transparent !important;
+  border: none !important;
+  box-shadow: none !important;
+  cursor: pointer !important;
+}
+
+[data-radix-popper-content-wrapper] .csv-column-mapper-create-btn[data-highlighted] {
+  background: hsl(var(--accent)) !important;
+  color: hsl(var(--accent-foreground)) !important;
+}
+
+
+
+  /* Purple button — for approve/verify actions */
+  .groove-btn.groove-btn-purple {
+    background: hsl(270 60% 50%) !important;
+    color: hsl(0 0% 100%) !important;
+    border-color: hsl(270 60% 40%) !important;
+  }
+
+  .groove-btn.groove-btn-purple:hover {
+    background: hsl(270 60% 44%) !important;
+    border-color: hsl(270 60% 34%) !important;
+    color: hsl(0 0% 100%) !important;
+  }
+
+  .groove-btn.groove-btn-purple:active {
+    border-style: inset !important;
+    transform: translateY(1px) !important;
+  }
+
+  /* White button — light background for secondary actions */
+  .groove-btn.groove-btn-white {
+    background: hsl(0 0% 95%) !important;
+    color: hsl(0 0% 10%) !important;
+    border-color: hsl(0 0% 75%) !important;
+  }
+
+  .groove-btn.groove-btn-white:hover {
+    background: hsl(0 0% 88%) !important;
+    border-color: hsl(0 0% 65%) !important;
+    color: hsl(0 0% 10%) !important;
+  }
+
+  .groove-btn.groove-btn-white:active {
+    border-style: inset !important;
+    transform: translateY(1px) !important;
+  }
+
+  /* Blue button — for AI/modify actions */
+  .groove-btn.groove-btn-blue {
+    background: hsl(228 60% 50%) !important;
+    color: hsl(0 0% 100%) !important;
+    border-color: hsl(228 60% 40%) !important;
+  }
+
+  .groove-btn.groove-btn-blue:hover {
+    background: hsl(228 60% 44%) !important;
+    border-color: hsl(228 60% 34%) !important;
+    color: hsl(0 0% 100%) !important;
+  }
+
+  .groove-btn.groove-btn-blue:active {
+    border-style: inset !important;
+    transform: translateY(1px) !important;
+  }
+
+  .groove-border {
+    border: 3px groove hsl(var(--border-groove)) !important;
+  }
+
+  /* Checked checkbox override */
+  [data-state="checked"].groove-border {
+    background-color: #fff !important;
+  }
+
+
+  .groove-border:hover {
+    border-color: hsl(var(--border-groove) / 0.85) !important;
+  }
+
+
+  /* Groove button — unified style */
+  .groove-btn {
+    border: 3px groove hsl(var(--border-groove)) !important;
+    border-radius: 0px !important;
+    background: hsl(var(--card)) !important;
+    color: hsl(var(--foreground)) !important;
+    font-family: 'VT323', monospace !important;
+    font-size: 16px !important;
+    font-weight: 700 !important;
+    text-transform: uppercase !important;
+    letter-spacing: 1px !important;
+    padding: 0 14px !important;
+    box-shadow: none !important;
+    transition: background-color 0.1s, border-color 0.1s, color 0.1s !important;
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    white-space: nowrap;
+    height: 32px !important;
+    min-height: 32px !important;
+    max-height: 32px !important;
+  }
+
+  .pagination-page-size-trigger,
+  .pagination-page-size-trigger > span,
+  [data-radix-popper-content-wrapper] .pagination-page-size-content,
+  [data-radix-popper-content-wrapper] .pagination-page-size-content *,
+  [data-radix-popper-content-wrapper] .pagination-page-size-item,
+  [data-radix-popper-content-wrapper] .pagination-page-size-item * {
+    font-family: 'IBM Plex Mono', monospace !important;
+    font-size: 13px !important;
+    font-weight: 400 !important;
+    text-transform: none !important;
+    letter-spacing: normal !important;
+  }
+
+  .groove-btn:hover {
+    background: hsl(var(--accent)) !important;
+    border-color: hsl(var(--border-groove) / 0.7) !important;
+    color: hsl(var(--foreground)) !important;
+  }
+
+  .groove-btn:active {
+    border-style: inset !important;
+    transform: translateY(1px) !important;
+  }
+
+  .groove-btn:disabled {
+    opacity: 0.5 !important;
+    pointer-events: none !important;
+  }
+
+  /* Primary CTA variant — cyan accent */
+  .groove-btn-primary {
+    border-color: hsl(var(--cyan-accent)) !important;
+    background: hsl(var(--cyan-accent) / 0.06) !important;
+    color: hsl(var(--cyan-accent)) !important;
+    font-weight: bold !important;
+  }
+
+  .groove-btn-primary:hover {
+    background: hsl(var(--cyan-accent) / 0.12) !important;
+    border-color: hsl(var(--cyan-accent) / 0.8) !important;
+    color: hsl(var(--cyan-accent)) !important;
+  }
+
+  .groove-btn-primary:active {
+    border-style: inset !important;
+    transform: translateY(1px) !important;
+  }
+
+  /* Destructive button — same groove geometry as default, red-toned */
+  .groove-btn-destructive {
+    background: hsl(var(--destructive)) !important;
+    color: hsl(var(--destructive-foreground)) !important;
+    border: 3px groove hsl(var(--destructive) / 0.78) !important;
+    font-weight: bold !important;
+  }
+
+  .groove-btn-destructive:hover {
+    background: hsl(var(--destructive) / 0.85) !important;
+    border-color: hsl(var(--destructive) / 0.65) !important;
+    color: hsl(var(--destructive-foreground)) !important;
+  }
+
+  .groove-btn-destructive:active {
+    border-style: inset !important;
+    transform: translateY(1px) !important;
+  }
+
+  /* Positive button — solid green with themed text */
+  .groove-btn-positive {
+    background: hsl(145 44% 30%) !important;
+    color: hsl(0 0% 100%) !important;
+    border-color: hsl(145 44% 24%) !important;
+    font-weight: bold !important;
+  }
+
+  .groove-btn-positive:hover {
+    background: hsl(145 44% 26%) !important;
+    border-color: hsl(145 44% 20%) !important;
+    color: hsl(0 0% 100%) !important;
+  }
+
+  .groove-btn-positive:active {
+    border-style: inset !important;
+    transform: translateY(1px) !important;
+  }
+
+  /* Pulse attention animation for active save buttons */
+  @keyframes groove-pulse {
+    0%, 100% { box-shadow: 0 0 0 0 hsl(145 44% 40% / 0.7) !important; }
+    50% { box-shadow: 0 0 0 8px hsl(145 44% 40% / 0) !important; }
+  }
+  .groove-btn-pulse:not(:disabled) {
+    animation: groove-pulse 1.8s ease-in-out infinite !important;
+    background: hsl(145 44% 30%) !important;
+    color: hsl(0 0% 100%) !important;
+    border-color: hsl(145 44% 24%) !important;
+  }
+  .groove-btn-pulse:not(:disabled):hover {
+    background: hsl(145 44% 26%) !important;
+  }
+  .groove-btn-pulse:disabled {
+    animation: none !important;
+  }
+
+  /* Terminal tag — retro embossed status indicator */
+  .terminal-tag {
+    display: inline-flex;
+    align-items: center;
+    gap: 3px;
+    border: 2px groove currentColor;
+    border-radius: 0px !important;
+    font-family: 'VT323', monospace !important;
+    font-size: 14px !important;
+    font-weight: 400 !important;
+    text-transform: uppercase !important;
+    letter-spacing: 1.5px !important;
+    padding: 1px 8px !important;
+    background: transparent !important;
+    line-height: 1.4;
+    white-space: nowrap;
+  }
+
+  .terminal-tag-green {
+    color: hsl(142 71% 45%) !important;
+    border-color: hsl(142 71% 45%) !important;
+    background: hsl(142 71% 45% / 0.08) !important;
+  }
+
+  .terminal-tag-red {
+    color: hsl(0 72% 51%) !important;
+    border-color: hsl(0 72% 51%) !important;
+    background: hsl(0 72% 51% / 0.08) !important;
+  }
+
+  .terminal-tag-orange {
+    color: hsl(33 80% 50%) !important;
+    border-color: hsl(33 80% 50%) !important;
+    background: hsl(33 80% 50% / 0.08) !important;
+  }
+
+  .terminal-tag-neutral {
+    color: hsl(var(--muted-foreground)) !important;
+    border-color: hsl(var(--border-groove)) !important;
+    background: transparent !important;
+    transition: background 0.15s, border-color 0.15s, color 0.15s;
+  }
+
+  .terminal-tag-neutral:hover,
+  .cursor-pointer:hover > .terminal-tag-neutral,
+  [class*="cursor-pointer"]:hover > .terminal-tag-neutral {
+    background: hsl(var(--accent)) !important;
+    border-color: hsl(var(--primary) / 0.3) !important;
+    color: hsl(var(--foreground)) !important;
+  }
+
+  .terminal-tag-cyan {
+    color: hsl(var(--cyan-accent)) !important;
+    border-color: hsl(var(--cyan-accent)) !important;
+    background: hsl(var(--cyan-accent) / 0.08) !important;
+  }
+
+  .terminal-tag-yellow {
+    color: hsl(45 93% 47%) !important;
+    border-color: hsl(45 93% 47%) !important;
+    background: hsl(45 93% 47% / 0.08) !important;
+  }
+
+}
+
+/* React Flow overrides for retro design system */
+.react-flow__controls {
+  border: 3px groove hsl(var(--border-groove)) !important;
+  border-radius: 0 !important;
+  background: hsl(var(--card)) !important;
+}
+.react-flow__controls-button {
+  background: hsl(var(--card)) !important;
+  border: none !important;
+  border-bottom: 1px solid hsl(var(--border)) !important;
+  fill: hsl(var(--foreground)) !important;
+  border-radius: 0 !important;
+}
+.react-flow__controls-button:hover {
+  background: hsl(var(--accent)) !important;
+}
+.react-flow__edge-path {
+  stroke: hsl(var(--muted-foreground)) !important;
+}
+.react-flow__connection-line {
+  stroke: hsl(var(--primary)) !important;
+}
+.react-flow__minimap {
+  border: 3px groove hsl(var(--border-groove)) !important;
+  border-radius: 0 !important;
+}
+.react-flow__attribution {
+  display: none !important;
+}
+
+/* ─── Workflow execution trace animations ─── */
+@keyframes flow-pulse {
+  0%, 100% { opacity: 0.4; }
+  50% { opacity: 1; }
+}
+
+/* ─── Credential arrow pulse ─── */
+@keyframes credential-arrow-blink {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.2; }
+}
+
+.credential-arrow-pulse {
+  animation: credential-arrow-blink 1.5s ease-in-out 3;
+}
+
+@keyframes credential-arrow-blink {
+  0% { opacity: 1; }
+  50% { opacity: 0.2; }
+  100% { opacity: 1; }
+}
+
+/* After pulse animation ends, JS removes the element — but if it lingers, fade it */
+.credential-arrow-pulse[data-done] {
+  opacity: 0;
+  transition: opacity 0.3s ease-out;
+}
+
+.credential-arrow-pulse-fadeout {
+  animation: credential-fadeout 0.5s ease-out forwards;
+}
+
+@keyframes credential-fadeout {
+  from { opacity: 1; }
+  to { opacity: 0; }
+}
+
+/* ─── Phone input groove override (react-phone-number-input) ─── */
+.phone-input-groove {
+  width: 100%;
+}
+
+.phone-input-groove.PhoneInput {
+  display: flex;
+  gap: 12px;
+  align-items: stretch;
+}
+
+.phone-input-groove .PhoneInputCountry {
+  display: flex !important;
+  align-items: center !important;
+  min-width: 75px !important;
+  height: 32px !important;
+  background-color: hsl(var(--card)) !important;
+  color: hsl(var(--foreground)) !important;
+  border: 3px groove hsl(var(--border-groove)) !important;
+  border-radius: 0 !important;
+  padding: 0 8px !important;
+  margin: 0 !important;
+  cursor: pointer;
+  gap: 4px;
+}
+
+.phone-input-groove .PhoneInputCountry:hover {
+  background-color: hsl(var(--accent)) !important;
+}
+
+.phone-input-groove .PhoneInputCountrySelect {
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 13px;
+  background: hsl(var(--card));
+  color: hsl(var(--foreground));
+  border: 3px groove hsl(var(--border-groove));
+  border-radius: 0;
+}
+
+.phone-input-groove .PhoneInputCountryIcon {
+  width: 20px !important;
+  height: 14px !important;
+}
+
+.phone-input-groove .PhoneInputCountrySelectArrow {
+  color: hsl(var(--muted-foreground));
+  opacity: 0.7;
+}
+
+.phone-input-groove .PhoneInputInput {
+  display: block !important;
+  flex: 1 1 auto !important;
+  min-width: 0 !important;
+  height: 32px !important;
+  background-color: hsl(var(--card)) !important;
+  color: hsl(var(--foreground)) !important;
+  border: 3px groove hsl(var(--border-groove)) !important;
+  border-radius: 0 !important;
+  font-family: 'IBM Plex Mono', monospace !important;
+  font-size: 13px !important;
+  letter-spacing: 0;
+  padding: 0 12px !important;
+  margin: 0 !important;
+}
+
+.phone-input-groove .PhoneInputInput::placeholder {
+  color: hsl(var(--muted-foreground));
+}
+
+.phone-input-groove .PhoneInputInput:focus {
+  outline: none !important;
+  box-shadow: none !important;
+  border: 3px groove hsl(var(--border-groove)) !important;
+}
+
+@media (max-width: 767px) {
+  .phone-input-groove .PhoneInputCountry,
+  .phone-input-groove .PhoneInputInput,
+  .phone-input-groove .PhoneInputInput:focus {
+    border: 3px groove hsl(var(--border-groove) / 0.45) !important;
+  }
+
+  /* Force 45% opacity on ALL groove elements on mobile — last rule wins */
+  .groove-border,
+  .groove-btn,
+  .groove-btn-positive,
+  .groove-btn-destructive,
+  .groove-btn-positive:hover,
+  .groove-btn-destructive:hover,
+  .groove-border:hover,
+  .waitlist-choice-checkbox.bg-card {
+    border: 3px groove hsl(var(--border-groove) / 0.45) !important;
+  }
+
+  .waitlist-choice-checkbox.bg-primary {
+    border: 3px groove hsl(var(--border-groove)) !important;
+  }
+}
+
+/* ── react-grid-layout placeholder styling ── */
+.campaign-rgl-grid .react-grid-placeholder {
+  background: hsl(var(--border) / 0.10) !important;
+  border: 1px dashed hsl(var(--border)) !important;
+  border-radius: 6px;
+  opacity: 1 !important;
+  transition: all 150ms ease;
+}
+
+.campaign-rgl-grid .react-grid-item {
+  transition: none !important;
+}
+
+.campaign-rgl-grid .react-grid-item.react-draggable-dragging {
+  transition: none;
+  z-index: 50;
+  opacity: 0.85;
+}
+
+/* ── Creator Mode — blur sensitive data for screen recording ── */
+.creator-blur {
+  filter: blur(3px) !important;
+  user-select: none !important;
+  cursor: pointer;
+}
+
+/* Heavy blur variant for large analytics numbers */
+.creator-blur-heavy {
+  filter: blur(10px) !important;
+  user-select: none !important;
+  cursor: pointer;
+}
+
+/* Double-click revealed state */
+.creator-blur.creator-revealed,
+.creator-blur-heavy.creator-revealed {
+  filter: none !important;
+  user-select: auto !important;
+  pointer-events: auto !important;
+}
+
+/* Keep inputs blurred but still show placeholder structure */
+input.creator-blur,
+textarea.creator-blur {
+  filter: blur(3px) !important;
+  user-select: none !important;
+}
+
+input.creator-blur.creator-revealed,
+textarea.creator-blur.creator-revealed {
+  filter: none !important;
+  user-select: auto !important;
+}
+
+/* Recharts axis tick text blur */
+.creator-blur-axis .recharts-cartesian-axis-tick-value {
+  filter: blur(2.5px);
+}

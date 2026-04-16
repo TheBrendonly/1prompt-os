@@ -1,0 +1,1 @@
+ALTER TABLE public.agent_settings ADD COLUMN name text NULL DEFAULT NULL;

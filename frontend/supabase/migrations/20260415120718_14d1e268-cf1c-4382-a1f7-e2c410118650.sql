@@ -1,0 +1,1 @@
+ALTER TABLE public.bookings RENAME COLUMN ghl_appointment_id TO ghl_booking_id;

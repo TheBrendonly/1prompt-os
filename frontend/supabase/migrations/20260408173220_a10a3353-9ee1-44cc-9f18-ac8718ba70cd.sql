@@ -1,0 +1,3 @@
+ALTER TABLE public.dm_executions
+  ADD COLUMN IF NOT EXISTS followup_status TEXT DEFAULT NULL,
+  ADD COLUMN IF NOT EXISTS followup_resume_at TIMESTAMPTZ DEFAULT NULL;

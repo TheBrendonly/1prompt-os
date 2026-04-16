@@ -1,0 +1,1 @@
+ALTER TABLE public.clients ADD COLUMN IF NOT EXISTS setter_config_last_generated_at timestamptz DEFAULT NULL;

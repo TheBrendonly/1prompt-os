@@ -1,0 +1,49 @@
+-- Update the lock_next_batch function to ensure leads are processed in the correct order
+CREATE OR REPLACE FUNCTION public.lock_next_batch(p_campaign_id uuid, p_batch_size integer DEFAULT 10)
+ RETURNS TABLE(id uuid, campaign_id uuid, lead_data jsonb, status text, scheduled_for timestamp with time zone, processed_at timestamp with time zone, error_message text, created_at timestamp with time zone, lead_fingerprint text)
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+AS $function$
+DECLARE
+  batch_scheduled_time timestamp with time zone;
+BEGIN
+  -- Find the earliest scheduled batch time that is due for processing
+  SELECT MIN(l.scheduled_for) INTO batch_scheduled_time
+  FROM leads l
+  WHERE l.campaign_id = p_campaign_id
+    AND l.status = 'pending'
+    AND l.scheduled_for <= now();
+  
+  -- If no batch is due, return empty
+  IF batch_scheduled_time IS NULL THEN
+    RETURN;
+  END IF;
+  
+  -- Atomically lock and return ALL leads scheduled for this exact batch time
+  -- Order by created_at to maintain UI display order
+  RETURN QUERY
+  UPDATE leads 
+  SET status = 'locked_for_processing'
+  WHERE leads.id IN (
+    SELECT l.id
+    FROM leads l
+    WHERE l.campaign_id = p_campaign_id
+      AND l.status = 'pending'
+      AND l.scheduled_for = batch_scheduled_time
+    ORDER BY l.created_at ASC  -- This ensures UI display order is maintained
+    LIMIT p_batch_size
+    FOR UPDATE SKIP LOCKED
+  )
+  RETURNING 
+    leads.id,
+    leads.campaign_id,
+    leads.lead_data,
+    leads.status,
+    leads.scheduled_for,
+    leads.processed_at,
+    leads.error_message,
+    leads.created_at,
+    leads.lead_fingerprint
+  ORDER BY leads.created_at ASC;  -- Ensure returned results maintain order
+END;
+$function$;

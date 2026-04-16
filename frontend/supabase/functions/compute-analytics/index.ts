@@ -1,0 +1,718 @@
+import { createClient } from "npm:@supabase/supabase-js@2";
+import { loggedFetch } from "../_shared/request-logger.ts";
+
+const corsHeaders = {
+  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Headers":
+    "authorization, x-client-info, apikey, content-type, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version",
+};
+
+interface MetricDef {
+  id?: string;
+  name: string;
+  prompt: string;
+  description?: string;
+  widget_type?: string;
+  color?: string;
+}
+
+interface ConversationMessage {
+  type: string;
+  content: string;
+  timestamp?: string;
+}
+
+interface Conversation {
+  session_id?: string;
+  client_id?: string;
+  messages: ConversationMessage[];
+  first_timestamp?: string;
+}
+
+const HUMAN_ROLE_SET = new Set(["human", "user", "business", "customer", "lead"]);
+const BOT_ROLE_SET = new Set(["ai", "assistant", "bot", "agent", "system"]);
+
+function normalizeRole(raw: unknown): string {
+  const role = String(raw ?? "").trim().toLowerCase();
+  if (HUMAN_ROLE_SET.has(role)) return "human";
+  if (BOT_ROLE_SET.has(role)) return "ai";
+  return role || "unknown";
+}
+
+function decodeJsonValue(raw: unknown): unknown {
+  let current = raw;
+
+  for (let attempt = 0; attempt < 4; attempt++) {
+    if (current && typeof current === "object" && !Array.isArray(current)) {
+      const record = current as Record<string, unknown>;
+      if (record._type === "String" && typeof record.value === "string") {
+        current = record.value;
+        continue;
+      }
+    }
+
+    if (typeof current !== "string") break;
+
+    const trimmed = current.trim();
+    if (!trimmed) return "";
+    if (!(trimmed.startsWith("{") || trimmed.startsWith("[") || trimmed.startsWith('"'))) {
+      return trimmed;
+    }
+
+    try {
+      current = JSON.parse(trimmed);
+    } catch {
+      return trimmed;
+    }
+  }
+
+  return current;
+}
+
+function extractMessageData(...candidates: unknown[]): { type: string; content: string } {
+  let resolvedType = "";
+  let resolvedContent: unknown = "";
+
+  const assignFromObject = (obj: Record<string, any>) => {
+    const candidateType = obj.type ?? obj.role;
+    if (!resolvedType && candidateType) {
+      resolvedType = normalizeRole(candidateType);
+    }
+
+    const candidateContent = obj.content ?? obj.text ?? obj.message ?? obj.body;
+    if ((resolvedContent === "" || resolvedContent == null) && candidateContent !== undefined) {
+      resolvedContent = candidateContent;
+    }
+  };
+
+  for (const candidate of candidates) {
+    const decoded = decodeJsonValue(candidate);
+
+    if (decoded && typeof decoded === "object" && !Array.isArray(decoded)) {
+      assignFromObject(decoded as Record<string, any>);
+      continue;
+    }
+
+    if ((resolvedContent === "" || resolvedContent == null) && decoded !== undefined && decoded !== null) {
+      resolvedContent = decoded;
+    }
+  }
+
+  const decodedContent = decodeJsonValue(resolvedContent);
+  if (decodedContent && typeof decodedContent === "object" && !Array.isArray(decodedContent)) {
+    assignFromObject(decodedContent as Record<string, any>);
+
+    const objectContent = (decodedContent as Record<string, any>).content
+      ?? (decodedContent as Record<string, any>).text
+      ?? (decodedContent as Record<string, any>).message;
+
+    if (objectContent !== undefined) {
+      resolvedContent = objectContent;
+    }
+  } else {
+    resolvedContent = decodedContent;
+  }
+
+  const content =
+    typeof resolvedContent === "string"
+      ? resolvedContent
+      : resolvedContent == null
+        ? ""
+        : JSON.stringify(resolvedContent);
+
+  return {
+    type: resolvedType || "unknown",
+    content,
+  };
+}
+
+// ── Helpers ─────────────────────────────────────────────────────────
+
+function compactContent(raw: any): string {
+  if (!raw) return "";
+  // Handle non-string content (objects, arrays, numbers)
+  let t: string;
+  if (typeof raw === "object") {
+    // If it's a parsed message object with content field, extract it
+    if (raw.content) return compactContent(raw.content);
+    t = JSON.stringify(raw);
+  } else {
+    t = String(raw);
+  }
+  t = t.replace(/^#\s*USER\s*LAST\s*UTTERANCE\s*/i, "");
+  t = t.split(/\s*(?:Attachment:\s*|#\s*USER\s*INPUT\s*ATTACH|\(FILES\/IMAGE\/AUDIO EXTRACTED CONTENT\):)/i)[0];
+  t = t.replace(/^#\s*\w[\w\s]*\n?/gm, "");
+  t = t.replace(/https?:\/\/\S+/gi, "");
+  t = t.replace(/\.\w+\s+Audio\s+[\d\-]+\s+at\s+[\d.]+\.\w+/gi, "");
+  t = t.replace(/\n{2,}/g, "\n").trim();
+  return t;
+}
+
+function buildCompactConversations(conversations: Conversation[]): string {
+  const lines: string[] = [];
+  for (const conv of conversations) {
+    const sid = conv.session_id || "unknown";
+    for (let i = 0; i < conv.messages.length; i++) {
+      const msg = conv.messages[i];
+      const normalized = extractMessageData(msg.content, { type: msg.type, content: msg.content });
+      const role = normalizeRole(msg.type || normalized.type);
+      const content = compactContent(normalized.content);
+      if (role !== "human" && role !== "ai") continue;
+      if (!content) continue;
+      const ts = msg.timestamp || "";
+      lines.push(`[${sid}|${i}|${ts}|${role === "human" ? "user" : "ai"}]: ${content}`);
+    }
+  }
+  return lines.join("\n");
+}
+
+function getDateFilter(timeRange: string, startDate?: string | null, endDate?: string | null) {
+  if (timeRange === "custom" && startDate && endDate) {
+    return { from: startDate, to: endDate };
+  }
+  const days = parseInt(timeRange) || 7;
+  const to = new Date();
+  const from = new Date(to.getTime() - days * 24 * 60 * 60 * 1000);
+  return {
+    from: from.toISOString().split("T")[0],
+    to: to.toISOString().split("T")[0] + "T23:59:59",
+  };
+}
+
+async function updateStage(supabase: any, executionId: string, stage: string, status?: string) {
+  const update: any = { stage_description: stage };
+  if (status) update.status = status;
+  await supabase.from("analytics_executions").update(update).eq("id", executionId);
+}
+
+async function detectTimestampColumn(
+  clientSupabaseUrl: string,
+  clientServiceKey: string,
+  historyTable: string
+): Promise<string> {
+  // Fetch one row to detect column names
+  const url = `${clientSupabaseUrl}/rest/v1/${historyTable}?select=*&limit=1`;
+  const res = await fetch(url, {
+    headers: {
+      apikey: clientServiceKey,
+      Authorization: `Bearer ${clientServiceKey}`,
+    },
+  });
+  if (!res.ok) {
+    await res.text();
+    return "created_at"; // fallback
+  }
+  const rows = await res.json();
+  if (!Array.isArray(rows) || rows.length === 0) return "created_at";
+
+  const row = rows[0];
+  const candidates = ["created_at", "timestamp", "createdAt", "date", "time", "sent_at", "inserted_at"];
+  for (const col of candidates) {
+    if (col in row) {
+      console.log(`Detected timestamp column: ${col}`);
+      return col;
+    }
+  }
+  // Fallback: return first key that looks like a timestamp
+  for (const [key, value] of Object.entries(row)) {
+    if (typeof value === "string" && /^\d{4}-\d{2}-\d{2}/.test(value)) {
+      console.log(`Detected timestamp column by value pattern: ${key}`);
+      return key;
+    }
+  }
+  return "created_at";
+}
+
+async function resolveHistoryTable(
+  clientSupabaseUrl: string,
+  clientServiceKey: string,
+  tableName: string
+): Promise<string> {
+  if (tableName) {
+    return tableName.endsWith("_history") ? tableName : `${tableName}_history`;
+  }
+
+  const candidates = ["chat_history", "messages_history", "conversations_history", "call_history"];
+  for (const candidate of candidates) {
+    const url = `${clientSupabaseUrl}/rest/v1/${candidate}?select=id&limit=1`;
+    const res = await fetch(url, {
+      headers: {
+        apikey: clientServiceKey,
+        Authorization: `Bearer ${clientServiceKey}`,
+      },
+    });
+    if (res.ok) {
+      await res.text();
+      console.log(`Auto-detected history table: ${candidate}`);
+      return candidate;
+    }
+    await res.text();
+  }
+
+  throw new Error("Could not find a history table. Please set the table name in your client settings.");
+}
+
+async function fetchConversations(
+  clientSupabaseUrl: string,
+  clientServiceKey: string,
+  tableName: string,
+  dateFilter: { from: string; to: string }
+): Promise<Conversation[]> {
+  const historyTable = await resolveHistoryTable(clientSupabaseUrl, clientServiceKey, tableName);
+  const tsCol = await detectTimestampColumn(clientSupabaseUrl, clientServiceKey, historyTable);
+  console.log(`Using history table: ${historyTable}, timestamp column: ${tsCol}`);
+
+  // Paginate to get all rows (Supabase default limit is 1000)
+  const allRows: any[] = [];
+  let offset = 0;
+  const pageSize = 1000;
+
+  while (true) {
+    const url = `${clientSupabaseUrl}/rest/v1/${historyTable}?select=*&${tsCol}=gte.${dateFilter.from}&${tsCol}=lte.${dateFilter.to}&order=${tsCol}.asc&limit=${pageSize}&offset=${offset}`;
+    const res = await fetch(url, {
+      headers: {
+        apikey: clientServiceKey,
+        Authorization: `Bearer ${clientServiceKey}`,
+      },
+    });
+
+    if (!res.ok) {
+      const errText = await res.text();
+      throw new Error(`Failed to fetch chat history (${res.status}): ${errText}`);
+    }
+
+    const rows = await res.json();
+    if (!Array.isArray(rows) || rows.length === 0) break;
+    allRows.push(...rows);
+    if (rows.length < pageSize) break;
+    offset += pageSize;
+  }
+
+  // Group by session_id
+  const sessionMap = new Map<string, Conversation>();
+  for (const row of allRows) {
+    const sid = row.session_id || row.conversation_id || "default";
+    if (!sessionMap.has(sid)) {
+      sessionMap.set(sid, {
+        session_id: sid,
+        client_id: row.client_id,
+        messages: [],
+        first_timestamp: row[tsCol] || row.created_at || row.timestamp,
+      });
+    }
+    const conv = sessionMap.get(sid)!;
+
+    const parsedMessage = extractMessageData(
+      row.message,
+      row.content,
+      { type: row.role ?? row.type, content: row.content ?? row.message }
+    );
+
+    conv.messages.push({
+      type: normalizeRole(parsedMessage.type),
+      content: parsedMessage.content,
+      timestamp: row[tsCol] || row.created_at || row.timestamp,
+    });
+  }
+
+  return Array.from(sessionMap.values());
+}
+
+async function computeDefaultMetrics(conversations: Conversation[]): Promise<any[]> {
+  let totalBotMessages = 0;
+  let totalHumanMessages = 0;
+  const uniqueUsers = new Set<string>();
+
+  for (const conv of conversations) {
+    if (conv.session_id) uniqueUsers.add(conv.session_id);
+
+    for (const msg of conv.messages) {
+      const parsedMessage = extractMessageData(msg.content, { type: msg.type, content: msg.content });
+      const role = normalizeRole(msg.type || parsedMessage.type);
+
+      if (role === "human") {
+        totalHumanMessages++;
+      } else if (role === "ai") {
+        totalBotMessages++;
+      }
+    }
+  }
+
+  return [
+    { title: "Total Conversations", value: conversations.length, label: "Total Conversations" },
+    { title: "Total Bot Messages", value: totalBotMessages, label: "Total Bot Messages" },
+    { title: "Total Human Messages", value: totalHumanMessages, label: "Total Human Messages" },
+    { title: "New Users", value: uniqueUsers.size, label: "New Users" },
+  ];
+}
+
+async function computeCustomMetric(
+  metric: MetricDef,
+  compactText: string,
+  conversations: Conversation[],
+  openrouterKey: string,
+  clientId: string
+): Promise<any> {
+  const widgetType = metric.widget_type || "number_card";
+
+  let responseFormat = "";
+  if (widgetType === "number_card") {
+    responseFormat = `Return JSON: {"value": <number>, "label": "<metric name>"}`;
+  } else if (widgetType === "line" || widgetType === "bar_vertical") {
+    responseFormat = `Return JSON: {"data_points": [{"date": "YYYY-MM-DD", "value": <number>}]}`;
+  } else if (widgetType === "bar_horizontal") {
+    responseFormat = `Return JSON: {"data_points": [{"name": "<category>", "value": <number>}]}`;
+  } else if (widgetType === "doughnut") {
+    responseFormat = `Return JSON: {"segments": [{"name": "<category>", "value": <number>}]}`;
+  } else {
+    responseFormat = `Return JSON: {"content": "<text summary>"}`;
+  }
+
+  const systemPrompt = `You are analyzing chat conversations. Your task:
+"${metric.prompt || metric.name}"
+
+${responseFormat}
+
+Be precise. Only count real matches. Return valid JSON only, no markdown.`;
+
+  const requestBody = {
+    model: "google/gemini-2.5-flash",
+    messages: [
+      { role: "system", content: systemPrompt },
+      { role: "user", content: compactText },
+    ],
+    temperature: 0,
+    response_format: { type: "json_object" },
+  };
+
+  const aiResponse = await loggedFetch(
+    "https://openrouter.ai/api/v1/chat/completions",
+    {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${openrouterKey}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(requestBody),
+    },
+    {
+      client_id: clientId,
+      request_type: "llm",
+      source: "compute-analytics",
+      method: "POST",
+      request_body: requestBody as unknown as Record<string, unknown>,
+      model: "google/gemini-2.5-flash",
+    }
+  );
+
+  if (!aiResponse.ok) {
+    const errText = await aiResponse.text();
+    console.error(`AI error for metric "${metric.name}":`, aiResponse.status, errText);
+    return null;
+  }
+
+  const aiData = await aiResponse.json();
+  const content = aiData?.choices?.[0]?.message?.content;
+
+  if (!content) return null;
+
+  try {
+    return JSON.parse(content);
+  } catch {
+    // Try to extract JSON from markdown code blocks
+    const jsonMatch = content.match(/```(?:json)?\s*([\s\S]*?)\s*```/);
+    if (jsonMatch) {
+      try { return JSON.parse(jsonMatch[1]); } catch { /* fall through */ }
+    }
+    console.error(`Failed to parse AI response for "${metric.name}":`, content);
+    return null;
+  }
+}
+
+async function processCustomMetricsInBackground(
+  supabase: any,
+  executionId: string,
+  clientId: string,
+  conversations: Conversation[],
+  customMetrics: MetricDef[],
+  openrouterApiKey: string | null
+) {
+  const builtinMetricNames = new Set([
+    "total conversations",
+    "total bot messages",
+    "total human messages",
+    "new users",
+    "total voice call",
+    "new user messages",
+  ]);
+
+  const customMetricsList = (customMetrics || []).filter(
+    (metric: any) => !builtinMetricNames.has(String(metric?.name || "").toLowerCase())
+  );
+
+  if (customMetricsList.length === 0) {
+    await supabase.from("analytics_executions").update({
+      stage_description: "Analytics computation complete",
+    }).eq("id", executionId);
+    console.log(`Analytics computation completed for execution ${executionId}`);
+    return;
+  }
+
+  if (!openrouterApiKey) {
+    await supabase.from("analytics_executions").update({
+      stage_description: "Default metrics ready. Custom metrics skipped — OpenRouter key missing.",
+    }).eq("id", executionId);
+    console.warn(`Skipped custom metrics for execution ${executionId}: missing OpenRouter key`);
+    return;
+  }
+
+  const compactText = buildCompactConversations(conversations);
+  const BATCH_SIZE = 4;
+  const widgets: any[] = [];
+
+  for (let batch = 0; batch < customMetricsList.length; batch += BATCH_SIZE) {
+    const batchMetrics = customMetricsList.slice(batch, batch + BATCH_SIZE);
+    const batchLabel = `Analyzing metrics ${batch + 1}-${Math.min(batch + BATCH_SIZE, customMetricsList.length)}/${customMetricsList.length}...`;
+
+    await supabase.from("analytics_executions").update({
+      stage_description: batchLabel,
+      status: "completed",
+    }).eq("id", executionId);
+
+    const batchResults = await Promise.allSettled(
+      batchMetrics.map(async (metric) => {
+        try {
+          const result = await computeCustomMetric(
+            metric,
+            compactText,
+            conversations,
+            openrouterApiKey,
+            clientId
+          );
+
+          if (result !== null) {
+            return {
+              id: metric.id,
+              title: metric.name,
+              name: metric.name,
+              widget_type: metric.widget_type || "number_card",
+              default_type: metric.widget_type || "number_card",
+              color: metric.color,
+              formats: {
+                [metric.widget_type || "number_card"]: result,
+                number_card: result?.value !== undefined ? result : { value: null, label: metric.name },
+              },
+              data: result,
+            };
+          }
+
+          return null;
+        } catch (metricErr: any) {
+          console.error(`Error computing metric "${metric.name}":`, metricErr);
+          return null;
+        }
+      })
+    );
+
+    for (const result of batchResults) {
+      if (result.status === "fulfilled" && result.value) {
+        widgets.push(result.value);
+      }
+    }
+
+    if (widgets.length > 0) {
+      const { error: widgetsPersistError } = await supabase
+        .from("analytics_results")
+        .update({ widgets })
+        .eq("execution_id", executionId);
+
+      if (widgetsPersistError) {
+        console.error(`Failed to persist widgets for execution ${executionId}:`, widgetsPersistError);
+      }
+    }
+  }
+
+  if (widgets.length > 0) {
+    const { error: widgetsError } = await supabase.from("analytics_results")
+      .update({ widgets })
+      .eq("execution_id", executionId);
+
+    if (widgetsError) {
+      console.error(`Failed to save final widgets for execution ${executionId}:`, widgetsError);
+    }
+
+    console.log(`Updated ${widgets.length} custom metric widgets for execution ${executionId}`);
+  }
+
+  await supabase.from("analytics_executions").update({
+    stage_description: "Analytics computation complete",
+  }).eq("id", executionId);
+
+  console.log(`Analytics computation completed for execution ${executionId}`);
+}
+
+// ── Main handler ────────────────────────────────────────────────────
+
+Deno.serve(async (req) => {
+  if (req.method === "OPTIONS") {
+    return new Response(null, { headers: corsHeaders });
+  }
+
+  try {
+    const {
+      execution_id,
+      client_id,
+      time_range,
+      start_date,
+      end_date,
+      default_metrics,
+      custom_metrics,
+      analytics_type,
+      client_supabase_url,
+      client_supabase_service_key,
+      client_supabase_table_name,
+      openrouter_api_key,
+    } = await req.json();
+
+    const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
+    const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+    const supabase = createClient(supabaseUrl, serviceKey);
+
+    if (!execution_id || !client_id) {
+      return new Response(
+        JSON.stringify({ error: "Missing execution_id or client_id" }),
+        { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
+
+    // Mark as running
+    await updateStage(supabase, execution_id, "Fetching chat history...", "running");
+
+    // Step 1: Fetch conversations
+    if (!client_supabase_url || !client_supabase_service_key) {
+      await supabase.from("analytics_executions").update({
+        status: "failed",
+        error_message: "Client Supabase credentials not configured",
+        completed_at: new Date().toISOString(),
+      }).eq("id", execution_id);
+
+      return new Response(
+        JSON.stringify({ error: "Client Supabase credentials not configured" }),
+        { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
+
+    const dateFilter = getDateFilter(time_range || "7", start_date, end_date);
+    let conversations: Conversation[];
+
+    try {
+      conversations = await fetchConversations(
+        client_supabase_url,
+        client_supabase_service_key,
+        client_supabase_table_name || "",
+        dateFilter
+      );
+    } catch (fetchErr: any) {
+      await supabase.from("analytics_executions").update({
+        status: "failed",
+        error_message: `Failed to fetch chat history: ${fetchErr.message}`,
+        completed_at: new Date().toISOString(),
+      }).eq("id", execution_id);
+
+      return new Response(
+        JSON.stringify({ error: fetchErr.message }),
+        { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
+
+    console.log(`Fetched ${conversations.length} conversations for client ${client_id}`);
+
+    // Step 2: Compute default metrics (instant, code-based)
+    await updateStage(supabase, execution_id, "Computing default metrics...");
+    const defaultMetricResults = await computeDefaultMetrics(conversations);
+
+    // Step 3: Build conversations list for the frontend
+    const conversationsList = conversations.map((conv) => ({
+      session_id: conv.session_id,
+      message_count: conv.messages.length,
+      first_timestamp: conv.first_timestamp,
+      messages: conv.messages.map((m) => ({
+        role: m.type,
+        content: m.content,
+        timestamp: m.timestamp,
+      })),
+    }));
+
+    const summary = {
+      total_conversations: conversations.length,
+      total_messages: conversations.reduce((sum, c) => sum + c.messages.length, 0),
+      date_range: dateFilter,
+      analytics_type: analytics_type || "text",
+      computed_at: new Date().toISOString(),
+    };
+
+    // Step 4: SAVE default metrics immediately so the UI gets data fast
+    const { error: earlyInsertError } = await supabase.from("analytics_results").insert({
+      client_id,
+      execution_id,
+      widgets: [],
+      default_metrics: defaultMetricResults,
+      summary,
+      conversations_list: conversationsList,
+    });
+
+    if (earlyInsertError) {
+      console.error("Failed to save initial analytics results:", earlyInsertError);
+      await supabase.from("analytics_executions").update({
+        status: "failed",
+        error_message: `Failed to save results: ${earlyInsertError.message}`,
+        completed_at: new Date().toISOString(),
+      }).eq("id", execution_id);
+
+      return new Response(
+        JSON.stringify({ error: "Failed to save results" }),
+        { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
+
+    // Mark completed immediately with default metrics — custom metrics are bonus
+    await supabase.from("analytics_executions").update({
+      status: "completed",
+      stage_description: "Default metrics ready. Processing custom metrics...",
+      completed_at: new Date().toISOString(),
+    }).eq("id", execution_id);
+
+    console.log(`Default metrics saved for execution ${execution_id}, custom metrics continuing in background...`);
+
+    const backgroundTask = processCustomMetricsInBackground(
+      supabase,
+      execution_id,
+      client_id,
+      conversations,
+      custom_metrics || [],
+      openrouter_api_key || null
+    ).catch(async (backgroundErr: any) => {
+      console.error("Background custom metric processing failed:", backgroundErr);
+      await supabase.from("analytics_executions").update({
+        stage_description: "Default metrics ready. Custom metrics failed.",
+        error_message: backgroundErr?.message || "Custom metric processing failed",
+        status: "completed",
+      }).eq("id", execution_id);
+    });
+
+    if (typeof (globalThis as any).EdgeRuntime !== "undefined") {
+      (globalThis as any).EdgeRuntime.waitUntil(backgroundTask);
+    }
+
+    return new Response(
+      JSON.stringify({ success: true, execution_id }),
+      { headers: { ...corsHeaders, "Content-Type": "application/json" } }
+    );
+  } catch (err: any) {
+    console.error("compute-analytics error:", err);
+    return new Response(
+      JSON.stringify({ error: err.message || "Internal server error" }),
+      { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+    );
+  }
+});

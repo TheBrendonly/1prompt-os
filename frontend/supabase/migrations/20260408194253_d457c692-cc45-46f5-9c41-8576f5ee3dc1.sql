@@ -1,0 +1,1 @@
+ALTER TABLE public.followup_timers ADD COLUMN IF NOT EXISTS trigger_run_id TEXT DEFAULT NULL;

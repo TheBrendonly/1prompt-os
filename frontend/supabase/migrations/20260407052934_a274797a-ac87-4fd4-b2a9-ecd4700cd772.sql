@@ -1,0 +1,1 @@
+UPDATE public.clients SET stripe_customer_id = NULL, stripe_subscription_id = NULL, subscription_status = 'free' WHERE id = '393451df-ce66-40a1-9ff6-09eceb161526';

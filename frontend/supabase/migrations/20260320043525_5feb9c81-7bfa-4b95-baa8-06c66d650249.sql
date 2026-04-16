@@ -1,0 +1,1 @@
+ALTER TABLE public.custom_metrics ADD COLUMN IF NOT EXISTS widget_type text NOT NULL DEFAULT 'number_card';

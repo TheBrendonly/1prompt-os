@@ -1,0 +1,1 @@
+ALTER TABLE public.lead_notes ADD COLUMN color text DEFAULT NULL;

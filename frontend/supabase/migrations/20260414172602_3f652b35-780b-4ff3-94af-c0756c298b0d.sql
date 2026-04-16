@@ -1,0 +1,1 @@
+ALTER TABLE public.clients ADD COLUMN IF NOT EXISTS send_followup_webhook_url TEXT DEFAULT NULL;

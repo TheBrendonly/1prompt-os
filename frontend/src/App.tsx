@@ -1,0 +1,358 @@
+import { useState, useEffect, lazy, Suspense } from "react";
+import { Toaster } from "@/components/ui/toaster";
+import { Toaster as Sonner } from "@/components/ui/sonner";
+import { TooltipProvider } from "@/components/ui/tooltip";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { BrowserRouter, Routes, Route, Navigate, useLocation, useParams } from "react-router-dom";
+import { useAuth } from "@/hooks/useAuth";
+import { ImageZoomProvider } from "@/contexts/ImageZoomContext";
+import { NavigationGuardProvider } from "@/contexts/NavigationGuardContext";
+import { ThemeProvider } from "next-themes";
+import { supabase } from "@/integrations/supabase/client";
+// Retry wrapper for lazy imports — handles stale chunk errors after redeploy
+function lazyRetry(importFn: () => Promise<any>) {
+  return lazy(() =>
+    importFn().catch(() => {
+      // Force reload once to get fresh chunks
+      const hasReloaded = sessionStorage.getItem('chunk-reload');
+      if (!hasReloaded) {
+        sessionStorage.setItem('chunk-reload', '1');
+        window.location.reload();
+        return new Promise(() => {}); // never resolves, page will reload
+      }
+      sessionStorage.removeItem('chunk-reload');
+      return importFn(); // retry once more after reload
+    })
+  );
+}
+
+// Home is eagerly loaded — it's the landing page
+import Home from "./pages/Home";
+import RetroLoader from "./components/RetroLoader";
+
+// Everything else is lazy-loaded
+const Dashboard = lazyRetry(() => import("./pages/Dashboard"));
+const Auth = lazyRetry(() => import("./pages/Auth"));
+const Register = lazyRetry(() => import("./pages/Register"));
+const VerifyEmail = lazyRetry(() => import("./pages/VerifyEmail"));
+const ForgotPassword = lazyRetry(() => import("./pages/ForgotPassword"));
+const ResetPassword = lazyRetry(() => import("./pages/ResetPassword"));
+const Subscribe = lazyRetry(() => import("./pages/Subscribe"));
+const SupportChatWidget = lazyRetry(() => import("@/components/SupportChatWidget").then(m => ({ default: m.SupportChatWidget })));
+const ClientManagement = lazyRetry(() => import("./pages/ClientManagement"));
+const ClientDashboard = lazyRetry(() => import("./pages/ClientDashboard"));
+const PromptManagement = lazyRetry(() => import("./pages/PromptManagement"));
+const KnowledgeBase = lazyRetry(() => import("./pages/KnowledgeBase"));
+const CampaignCreate = lazyRetry(() => import("./pages/CampaignCreate"));
+const CampaignDetail = lazyRetry(() => import("./pages/CampaignDetail"));
+const Settings = lazyRetry(() => import("./pages/Settings"));
+const ApiManagement = lazyRetry(() => import("./pages/ApiManagement"));
+const ApiCredentials = lazyRetry(() => import("./pages/ApiCredentials"));
+const WorkflowImports = lazyRetry(() => import("./pages/WorkflowImports"));
+const TextAIRepConfiguration = lazyRetry(() => import("./pages/TextAIRepConfiguration"));
+const TextAIRepTemplates = lazyRetry(() => import("./pages/TextAIRepTemplates"));
+const DeployAIReps = lazyRetry(() => import("./pages/DeployAIReps"));
+const DebugAIReps = lazyRetry(() => import("./pages/DebugAIReps"));
+const DebugTextAIRep = lazyRetry(() => import("./pages/DebugTextAIRep"));
+const DebugVoiceAIRep = lazyRetry(() => import("./pages/DebugVoiceAIRep"));
+const VoiceAIRepConfiguration = lazyRetry(() => import("./pages/VoiceAIRepConfiguration"));
+const VoiceAISetter = lazyRetry(() => import("./pages/VoiceAISetter"));
+const VoiceAIRepTemplates = lazyRetry(() => import("./pages/VoiceAIRepTemplates"));
+const WebinarSetup = lazyRetry(() => import("./pages/WebinarSetup"));
+const WebinarAnalytics = lazyRetry(() => import("./pages/WebinarAnalyticsEnhanced"));
+const WhatToDo = lazyRetry(() => import("./pages/WhatToDo"));
+const WebinarChecklist = lazyRetry(() => import("./pages/WebinarChecklist"));
+const WebinarSetupLinks = lazyRetry(() => import("./pages/WebinarSetupLinks"));
+const PresentationAgent = lazyRetry(() => import("./pages/PresentationAgent"));
+const WebinarPresentationAgent = lazyRetry(() => import("./pages/WebinarPresentationAgent"));
+const ChatAnalytics = lazyRetry(() => import("./pages/ChatAnalytics"));
+const DemoPages = lazyRetry(() => import("./pages/DemoPages"));
+const DemoPageEditor = lazyRetry(() => import("./pages/DemoPageEditor"));
+const PublicDemoPage = lazyRetry(() => import("./pages/PublicDemoPage"));
+const DemoPageContacts = lazyRetry(() => import("./pages/DemoPageContacts"));
+const DemoPageContactChat = lazyRetry(() => import("./pages/DemoPageContactChat"));
+const NotFound = lazyRetry(() => import("./pages/NotFound"));
+const ClientSettings = lazyRetry(() => import("./pages/ClientSettings"));
+const AccountSettings = lazyRetry(() => import("./pages/AccountSettings"));
+const RedirectToFirstClient = lazyRetry(() => import("./pages/RedirectToFirstClient"));
+const ClientPortal = lazyRetry(() => import("./pages/ClientPortal"));
+const Contacts = lazyRetry(() => import("./pages/Contacts"));
+const Chats = lazyRetry(() => import("./pages/Chats"));
+const LeadFileProcessing = lazyRetry(() => import("./pages/LeadFileProcessing"));
+const ContactDetail = lazyRetry(() => import("./pages/ContactDetail"));
+const ErrorLogs = lazyRetry(() => import("./pages/ErrorLogs"));
+const RequestLogs = lazyRetry(() => import("./pages/RequestLogs"));
+const Logs = lazyRetry(() => import("./pages/Logs"));
+const UsageCredits = lazyRetry(() => import("./pages/UsageCredits"));
+const SupabaseUsage = lazyRetry(() => import("./pages/SupabaseUsage"));
+const Templates = lazyRetry(() => import("./pages/Templates"));
+const LeadReactivation = lazyRetry(() => import("./pages/LeadReactivation"));
+const Simulator = lazyRetry(() => import("./pages/Simulator"));
+const TierList = lazyRetry(() => import("./pages/TierList"));
+const AnalyticsV2 = lazyRetry(() => import("./pages/AnalyticsV2"));
+const VisualizationDemo = lazyRetry(() => import("./pages/VisualizationDemo"));
+const ManageClients = lazyRetry(() => import("./pages/ManageClients"));
+const CreateClient = lazyRetry(() => import("./pages/CreateClient"));
+const ClientLayout = lazyRetry(() => import("./components/ClientLayout").then(m => ({ default: m.ClientLayout })));
+const AnalyticsLayout = lazyRetry(() => import("./pages/AnalyticsLayout").then(m => ({ default: m.AnalyticsLayout })));
+const SpeedToLeadLayout = lazyRetry(() => import("./pages/SpeedToLeadLayout"));
+const SpeedToLeadDashboard = lazyRetry(() => import("./pages/SpeedToLeadDashboard"));
+const SpeedToLeadContacts = lazyRetry(() => import("./pages/SpeedToLeadContacts"));
+const SpeedToLeadContactDetail = lazyRetry(() => import("./pages/SpeedToLeadContactDetail"));
+const Onboarding = lazyRetry(() => import("./pages/Onboarding"));
+const Workflows = lazyRetry(() => import("./pages/Workflows"));
+const WorkflowEditor = lazyRetry(() => import("./pages/WorkflowEditor"));
+const ProcessDMs = lazyRetry(() => import("./pages/ProcessDMs"));
+const SyncGHLContacts = lazyRetry(() => import("./pages/SyncGHLContacts"));
+const OutboundCallProcessing = lazyRetry(() => import("./pages/OutboundCallProcessing"));
+const SyncGHLBookings = lazyRetry(() => import("./pages/SyncGHLBookings"));
+const Engagement = lazyRetry(() => import("./pages/Engagement"));
+const InstagramDMs = lazyRetry(() => import("./pages/InstagramDMs"));
+
+const EmailInbox = lazyRetry(() => import("./pages/EmailInbox"));
+
+const queryClient = new QueryClient({
+  defaultOptions: {
+    queries: {
+      staleTime: 5 * 60 * 1000,
+      gcTime: 10 * 60 * 1000,
+      refetchOnWindowFocus: false,
+      retry: 1,
+    },
+  },
+});
+
+const ProtectedRoute = ({ children }: { children: React.ReactNode }) => {
+  const { user, loading } = useAuth();
+  
+  if (loading) return <RetroLoader />;
+  
+  return user ? <>{children}</> : <Navigate to="/auth" replace />;
+};
+
+const AgencyRoute = ({ children }: { children: React.ReactNode }) => {
+  const { user, loading, role, userClientId } = useAuth();
+  
+  if (loading) return <RetroLoader />;
+  
+  if (!user) return <Navigate to="/auth" replace />;
+  if (role === 'client' && userClientId) {
+    return <Navigate to={`/client/${userClientId}/analytics/chatbot/dashboard`} replace />;
+  }
+  
+  return <>{children}</>;
+};
+
+const ClientRouteGuard = ({ children }: { children: React.ReactNode }) => {
+  const { user, loading, role, userClientId } = useAuth();
+  const { clientId } = useParams<{ clientId: string }>();
+  
+  if (loading) return <RetroLoader />;
+  
+  if (!user) return <Navigate to="/auth" replace />;
+  
+  if (role === 'client' && userClientId && clientId !== userClientId) {
+    return <Navigate to={`/client/${userClientId}/analytics/chatbot/dashboard`} replace />;
+  }
+  
+  return <>{children}</>;
+};
+
+const IndexRoute = () => {
+  const { user, loading } = useAuth();
+  
+  if (loading) return <RetroLoader />;
+  
+  return user ? <Suspense fallback={<RetroLoader />}><RedirectToFirstClient /></Suspense> : <Home />;
+};
+
+const ConditionalSupportChat = () => {
+  const location = useLocation();
+  const { user } = useAuth();
+  const { clientId } = useParams<{ clientId: string }>();
+  const [isPresentationOnly, setIsPresentationOnly] = useState(false);
+  
+  useEffect(() => {
+    const checkPresentationMode = async () => {
+      if (!clientId) {
+        setIsPresentationOnly(false);
+        return;
+      }
+      
+      const { data } = await supabase
+        .from('clients')
+        .select('presentation_only_mode')
+        .eq('id', clientId)
+        .single();
+      
+      setIsPresentationOnly(data?.presentation_only_mode === true);
+    };
+    
+    checkPresentationMode();
+  }, [clientId]);
+  
+  if (location.pathname.startsWith('/demo/') || location.pathname === '/home') {
+    return null;
+  }
+  
+  if (isPresentationOnly) {
+    return null;
+  }
+  
+  return user ? <Suspense fallback={null}><SupportChatWidget /></Suspense> : null;
+};
+
+const App = () => {
+  return (
+    <ThemeProvider attribute="class" defaultTheme="dark" enableSystem={false}>
+    <QueryClientProvider client={queryClient}>
+      <TooltipProvider>
+        <ImageZoomProvider>
+          <Toaster />
+          <Sonner />
+          
+          <BrowserRouter>
+          <NavigationGuardProvider>
+          <Suspense fallback={<RetroLoader />}>
+          <Routes>
+            {/* Home is NOT lazy — renders instantly */}
+            <Route path="/home" element={<Home />} />
+            <Route path="/auth" element={<Auth />} />
+            <Route path="/register" element={<Register />} />
+            <Route path="/verify" element={<VerifyEmail />} />
+            <Route path="/forgot-password" element={<ForgotPassword />} />
+            <Route path="/reset-password" element={<ResetPassword />} />
+            <Route path="/onboarding" element={<ProtectedRoute><Onboarding /></ProtectedRoute>} />
+            <Route path="/subscribe" element={<ProtectedRoute><Subscribe /></ProtectedRoute>} />
+            <Route path="/demo/:slug" element={<PublicDemoPage />} />
+            <Route 
+              path="/" 
+              element={<IndexRoute />}
+            />
+            
+            <Route path="/client/:clientId" element={<ClientRouteGuard><ClientLayout /></ClientRouteGuard>}>
+              <Route index element={<Navigate to="analytics/chatbot/dashboard" replace />} />
+              
+              <Route path="analytics" element={<AnalyticsLayout />}>
+                <Route index element={<Navigate to="chatbot/dashboard" replace />} />
+                <Route path="chatbot/dashboard" element={<ChatAnalytics />} />
+                <Route path="chatbot/chat-with-ai" element={<ChatAnalytics />} />
+                <Route path="voice-ai/dashboard" element={<ChatAnalytics />} />
+                <Route path="voice-ai/chat-with-ai" element={<ChatAnalytics />} />
+              </Route>
+              
+              <Route path="analytics-v2" element={<AnalyticsV2 />} />
+              
+              <Route path="dashboard" element={<Navigate to="analytics/chatbot/dashboard" replace />} />
+              <Route path="chat-analytics" element={<Navigate to="analytics/chatbot/dashboard" replace />} />
+              
+              <Route path="what-to-do" element={<WhatToDo />} />
+              <Route path="credentials" element={<ApiCredentials />} />
+              <Route path="text-ai-rep" element={<Navigate to="configuration" replace />} />
+              <Route path="text-ai-rep/configuration" element={<TextAIRepConfiguration />} />
+              <Route path="text-ai-rep/templates" element={<TextAIRepTemplates />} />
+              <Route path="voice-ai-rep" element={<Navigate to="configuration" replace />} />
+              <Route path="voice-ai-rep/configuration" element={<VoiceAIRepConfiguration />} />
+              <Route path="voice-ai-rep/templates" element={<VoiceAIRepTemplates />} />
+              <Route path="api" element={<TextAIRepConfiguration />} />
+              <Route path="api/configuration" element={<TextAIRepConfiguration />} />
+              <Route path="api/workflow-imports" element={<TextAIRepTemplates />} />
+              <Route path="api/credentials" element={<ApiCredentials />} />
+              <Route path="webinar-setup" element={<Navigate to="configuration" replace />} />
+              <Route path="webinar-setup/configuration" element={<WebinarSetup />} />
+              <Route path="webinar-setup/checklist" element={<WebinarChecklist />} />
+              <Route path="webinar-setup/credentials" element={<WebinarSetupLinks />} />
+              <Route path="webinar-setup/analytics" element={<WebinarAnalytics />} />
+              <Route path="webinar-setup/presentation-agent" element={<PresentationAgent />} />
+              <Route path="webinar-presentation-agent" element={<WebinarPresentationAgent />} />
+              <Route path="prompts" element={<Navigate to="prompts/text" replace />} />
+              <Route path="prompts/text" element={<PromptManagement />} />
+              <Route path="prompts/voice" element={<PromptManagement />} />
+              <Route path="prompts/viz-demo" element={<VisualizationDemo />} />
+              <Route path="deploy-ai-reps" element={<DeployAIReps />} />
+              <Route path="debug-ai-reps" element={<DebugAIReps />} />
+              <Route path="debug-ai-reps/text" element={<DebugTextAIRep />} />
+              <Route path="debug-ai-reps/voice" element={<DebugVoiceAIRep />} />
+              <Route path="knowledge-base" element={<KnowledgeBase />} />
+              <Route path="leads" element={<Contacts />} />
+              <Route path="leads/files" element={<LeadFileProcessing />} />
+              <Route path="leads/:contactId" element={<ContactDetail />} />
+              <Route path="chats" element={<Chats />} />
+              <Route path="campaigns" element={<Dashboard />} />
+              <Route path="campaigns/create" element={<CampaignCreate />} />
+              <Route path="campaigns/:campaignId" element={<CampaignDetail />} />
+              <Route path="demo-pages" element={<DemoPages />} />
+              <Route path="demo-pages/:pageId" element={<DemoPageEditor />} />
+              <Route path="sms-contacts" element={<DemoPageContacts />} />
+              <Route path="sms-contacts/:contactId" element={<DemoPageContactChat />} />
+              <Route path="instagram-dms" element={<InstagramDMs />} />
+              
+              <Route path="email" element={<EmailInbox />} />
+              <Route path="speed-to-lead" element={<SpeedToLeadLayout />}>
+                <Route index element={<Navigate to="dashboard" replace />} />
+                <Route path="dashboard" element={<SpeedToLeadDashboard />} />
+                <Route path="contacts" element={<SpeedToLeadContacts />} />
+              </Route>
+              <Route path="speed-to-lead/contacts/:contactId" element={<SpeedToLeadContactDetail />} />
+              <Route path="settings" element={<ClientSettings />} />
+              <Route path="manage-clients" element={<ManageClients />} />
+              <Route path="create-client" element={<CreateClient />} />
+              <Route path="account-settings" element={<AccountSettings />} />
+              <Route path="client-portal" element={<ClientPortal />} />
+              <Route path="error-logs" element={<ErrorLogs />} />
+              <Route path="request-logs" element={<RequestLogs />} />
+              <Route path="logs" element={<Logs />} />
+              <Route path="usage-credits" element={<UsageCredits />} />
+              <Route path="supabase-usage" element={<SupabaseUsage />} />
+              <Route path="templates" element={<Templates />} />
+              <Route path="lead-reactivation" element={<LeadReactivation />} />
+              <Route path="voice-ai-setter" element={<Navigate to="../prompts/voice" replace />} />
+              <Route path="voice-ai-setter-legacy" element={<VoiceAISetter />} />
+              <Route path="simulator" element={<Simulator />} />
+              <Route path="tier-list" element={<TierList />} />
+              <Route path="workflows" element={<Workflows />} />
+              <Route path="workflows/process-dms" element={<ProcessDMs />} />
+              <Route path="workflows/sync-ghl-contacts" element={<SyncGHLContacts />} />
+              <Route path="workflows/outbound-call-processing" element={<OutboundCallProcessing />} />
+              <Route path="workflows/sync-ghl-bookings" element={<SyncGHLBookings />} />
+              <Route path="workflows/engagement" element={<Engagement />} />
+              <Route path="workflows/:workflowId" element={<WorkflowEditor />} />
+            </Route>
+            <Route 
+              path="/create" 
+              element={
+                <ProtectedRoute>
+                  <CampaignCreate />
+                </ProtectedRoute>
+              } 
+            />
+            <Route 
+              path="/campaign/:campaignId" 
+              element={
+                <ProtectedRoute>
+                  <CampaignDetail />
+                </ProtectedRoute>
+              } 
+            />
+            <Route 
+              path="/settings" 
+              element={
+                <ProtectedRoute>
+                  <Settings />
+                </ProtectedRoute>
+              } 
+            />
+            <Route path="*" element={<NotFound />} />
+          </Routes>
+          </Suspense>
+            <ConditionalSupportChat />
+          </NavigationGuardProvider>
+          </BrowserRouter>
+        </ImageZoomProvider>
+      </TooltipProvider>
+    </QueryClientProvider>
+    </ThemeProvider>
+  );
+};
+
+export default App;

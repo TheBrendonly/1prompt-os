@@ -1,0 +1,1 @@
+ALTER TABLE public.simulations ADD COLUMN IF NOT EXISTS free_input text;

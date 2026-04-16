@@ -1,0 +1,1 @@
+ALTER TABLE engagement_executions ADD COLUMN IF NOT EXISTS contact_email TEXT;

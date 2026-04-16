@@ -1,0 +1,1 @@
+ALTER TABLE public.clients ADD COLUMN IF NOT EXISTS crm_page_size integer NOT NULL DEFAULT 50;

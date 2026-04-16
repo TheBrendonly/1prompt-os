@@ -1,0 +1,1 @@
+ALTER TABLE dm_executions ADD COLUMN IF NOT EXISTS trigger_payload jsonb DEFAULT '{}'::jsonb;

@@ -1,0 +1,1 @@
+ALTER TABLE public.clients ADD COLUMN sync_ghl_booking_enabled boolean DEFAULT false;

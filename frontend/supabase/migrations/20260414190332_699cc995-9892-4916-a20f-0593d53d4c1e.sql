@@ -1,0 +1,1 @@
+ALTER TABLE public.leads ADD COLUMN setter_stopped boolean NOT NULL DEFAULT false;

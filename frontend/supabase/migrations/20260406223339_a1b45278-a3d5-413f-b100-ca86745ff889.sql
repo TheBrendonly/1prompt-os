@@ -1,0 +1,1 @@
+DELETE FROM prompt_configurations WHERE client_id = '35f905a9-fbf7-4cab-8d1b-d5301d3436ea' AND slot_id = 'Setter-1';

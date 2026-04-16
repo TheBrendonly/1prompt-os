@@ -1,0 +1,1 @@
+ALTER TABLE public.dashboard_widgets ADD COLUMN IF NOT EXISTS friendly_name TEXT;

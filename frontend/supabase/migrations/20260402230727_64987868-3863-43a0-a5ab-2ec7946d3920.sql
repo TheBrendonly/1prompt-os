@@ -1,0 +1,1 @@
+ALTER TABLE public.sync_ghl_executions ADD COLUMN IF NOT EXISTS steps jsonb DEFAULT '[]'::jsonb;

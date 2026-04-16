@@ -1,0 +1,1 @@
+ALTER TABLE public.clients ADD COLUMN retell_outbound_followup_agent_id TEXT;

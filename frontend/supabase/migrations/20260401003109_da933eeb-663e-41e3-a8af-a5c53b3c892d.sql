@@ -1,0 +1,1 @@
+alter table error_logs enable row level security;

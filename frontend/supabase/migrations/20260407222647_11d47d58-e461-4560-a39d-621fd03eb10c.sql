@@ -1,0 +1,1 @@
+ALTER TABLE ai_generation_jobs ADD COLUMN IF NOT EXISTS raw_exchanges JSONB DEFAULT NULL;

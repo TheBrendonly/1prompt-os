@@ -1,0 +1,1 @@
+ALTER TABLE public.clients ADD COLUMN ghl_send_reply_webhook_url text DEFAULT NULL;

@@ -1,0 +1,624 @@
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+
+const corsHeaders = {
+  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Headers":
+    "authorization, x-client-info, apikey, content-type",
+};
+
+const CALL_ANALYZED_EVENT = "call_analyzed";
+const EXTERNAL_STRINGIFIABLE_COLUMNS = new Set([
+  "call_analysis",
+  "custom_analysis_data",
+  "latency_ms",
+  "metadata",
+  "pre_call_context",
+  "raw_payload",
+  "retell_dynamic_variables",
+  "transcript_object",
+  "transcript_with_tool_calls",
+  "transfer_destination",
+  "transfer_option",
+]);
+
+function hasMeaningfulValue(value: unknown): boolean {
+  if (value === null || value === undefined) return false;
+  if (Array.isArray(value)) return value.length > 0;
+  if (typeof value === "object") return Object.keys(value as Record<string, unknown>).length > 0;
+  return true;
+}
+
+function toIsoTimestamp(value: unknown): string | null {
+  if (typeof value !== "number" && typeof value !== "string") return null;
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? null : date.toISOString();
+}
+
+function safeJsonStringify(value: unknown): string | null {
+  try {
+    return JSON.stringify(value);
+  } catch {
+    return null;
+  }
+}
+
+function buildEnrichedAnalysisData(
+  eventType: string,
+  rawPayload: Record<string, unknown>,
+  call: Record<string, unknown>,
+  dynamicVars: Record<string, unknown>,
+): Record<string, unknown> | null {
+  const rawCustomAnalysisData = call.call_analysis && typeof call.call_analysis === "object"
+    ? (call.call_analysis as Record<string, unknown>).custom_analysis_data
+    : null;
+
+  const customAnalysisData = rawCustomAnalysisData && typeof rawCustomAnalysisData === "object" && !Array.isArray(rawCustomAnalysisData)
+    ? { ...(rawCustomAnalysisData as Record<string, unknown>) }
+    : rawCustomAnalysisData !== null && rawCustomAnalysisData !== undefined
+      ? { value: rawCustomAnalysisData }
+      : {};
+
+  const retellEnvelope: Record<string, unknown> = {
+    event: eventType,
+    call_analysis: call.call_analysis ?? null,
+    metadata: call.metadata ?? null,
+    dynamic_variables: dynamicVars,
+    transcript_with_tool_calls: call.transcript_with_tool_calls ?? null,
+    transfer_destination: rawPayload.transfer_destination ?? null,
+    transfer_option: rawPayload.transfer_option ?? null,
+    opt_out_sensitive_data_storage: call.opt_out_sensitive_data_storage ?? null,
+  };
+
+  if (!Object.keys(customAnalysisData).length && !hasMeaningfulValue(retellEnvelope)) {
+    return null;
+  }
+
+  return {
+    ...customAnalysisData,
+    _retell: retellEnvelope,
+  };
+}
+
+Deno.serve(async (req) => {
+  if (req.method === "OPTIONS") {
+    return new Response(null, { headers: corsHeaders });
+  }
+
+  // Always return 200 to prevent Retell retries
+  const ok = (body: Record<string, unknown>, status = 200) =>
+    new Response(JSON.stringify(body), {
+      status,
+      headers: { ...corsHeaders, "Content-Type": "application/json" },
+    });
+
+  try {
+    const rawPayload = await req.json();
+    const eventType = rawPayload.event;
+    console.log(`📞 Retell call analysis webhook received, event: ${eventType}`);
+
+    // Retell sends various events; we care about call completion
+    if (eventType !== "call_ended" && eventType !== CALL_ANALYZED_EVENT) {
+      console.log(`⏭️ Ignoring event type: ${eventType}`);
+      return ok({ ok: true, skipped: true });
+    }
+
+    const shouldPersistAnalyzedRecord = eventType === CALL_ANALYZED_EVENT;
+
+    const call = rawPayload.call || rawPayload.data || rawPayload;
+    const callId = call.call_id || call.id || null;
+
+    const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
+    const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+    const supabase = createClient(supabaseUrl, serviceKey);
+
+    // ── Step 1: Identify client ──
+
+    const dynamicVars = call.retell_llm_dynamic_variables || call.dynamic_variables || {};
+    const ghlAccountId: string | null = dynamicVars.ghl_account_id || dynamicVars.GHL_Account_ID || null;
+    const contactId: string | null = dynamicVars.contact_id || dynamicVars.Contact_ID || dynamicVars.Lead_ID || null;
+    const setterId: string | null = dynamicVars.voice_setter_id || null;
+    const normalizedSetterSlotId = typeof setterId === "string"
+      ? setterId.replace(/voice-setter-(\d+)/i, "Voice-Setter-$1")
+      : null;
+    const agentId: string | null = call.agent_id || null;
+
+    let clientId: string | null = null;
+    let resolvedGhlAccountId: string | null = ghlAccountId;
+    let phoneCallWebhookUrl: string | null = null;
+    let setterPostWebhookUrl: string | null = null;
+    let existingPreCallContext: unknown = undefined;
+
+    // Primary: resolve via ghl_account_id
+    if (ghlAccountId) {
+      const { data: clientRow } = await supabase
+        .from("clients")
+        .select("id, phone_call_webhook_url")
+        .eq("ghl_location_id", ghlAccountId)
+        .single();
+
+      if (clientRow) {
+        clientId = clientRow.id;
+        phoneCallWebhookUrl = clientRow.phone_call_webhook_url;
+        console.log(`✅ Client resolved via ghl_account_id: ${clientId}`);
+      }
+    }
+
+    // Fallback: resolve via retell_agent_mapping
+    if (!clientId && agentId) {
+      const { data: mapping } = await supabase
+        .from("retell_agent_mapping")
+        .select("client_id, ghl_account_id")
+        .eq("agent_id", agentId)
+        .single();
+
+      if (mapping) {
+        clientId = mapping.client_id;
+        resolvedGhlAccountId = resolvedGhlAccountId || mapping.ghl_account_id;
+        console.log(`✅ Client resolved via agent_id mapping: ${clientId}`);
+      }
+    }
+
+    // Second fallback: resolve via client retell agent columns (all 10 slots)
+    let externalSupabaseUrl: string | null = null;
+    let externalServiceKey: string | null = null;
+
+    if (!clientId && agentId) {
+      const { data: clients } = await supabase
+        .from("clients")
+        .select("id, ghl_location_id, supabase_url, supabase_service_key, phone_call_webhook_url")
+        .or(
+          `retell_inbound_agent_id.eq.${agentId},retell_outbound_agent_id.eq.${agentId},retell_outbound_followup_agent_id.eq.${agentId},retell_agent_id_4.eq.${agentId},retell_agent_id_5.eq.${agentId},retell_agent_id_6.eq.${agentId},retell_agent_id_7.eq.${agentId},retell_agent_id_8.eq.${agentId},retell_agent_id_9.eq.${agentId},retell_agent_id_10.eq.${agentId}`
+        );
+
+      if (clients && clients.length > 0) {
+        clientId = clients[0].id;
+        resolvedGhlAccountId = resolvedGhlAccountId || clients[0].ghl_location_id;
+        externalSupabaseUrl = clients[0].supabase_url;
+        externalServiceKey = clients[0].supabase_service_key;
+        phoneCallWebhookUrl = clients[0].phone_call_webhook_url;
+        console.log(`✅ Client resolved via retell agent columns: ${clientId}`);
+      }
+    }
+
+    // If still no client, log error and return 200
+    if (!clientId) {
+      console.error(`❌ Could not resolve client. agent_id=${agentId}, ghl_account_id=${ghlAccountId}`);
+
+      const errorGhlId = ghlAccountId || "unknown";
+      await supabase.from("error_logs").insert({
+        client_ghl_account_id: errorGhlId,
+        severity: "error",
+        source: "retell-call-analysis-webhook",
+        error_type: "client_resolution_failed",
+        error_message: `Could not resolve client for Retell call. agent_id=${agentId}, ghl_account_id=${ghlAccountId}`,
+        context: { call_id: call.call_id, agent_id: agentId, raw_payload: rawPayload },
+      });
+
+      return ok({ ok: true, skipped: true, reason: "client_not_found" });
+    }
+
+    if (callId) {
+      const { data: existingCallHistory } = await supabase
+        .from("call_history")
+        .select("pre_call_context")
+        .eq("call_id", callId)
+        .maybeSingle();
+
+      if (existingCallHistory && Object.prototype.hasOwnProperty.call(existingCallHistory, "pre_call_context")) {
+        existingPreCallContext = existingCallHistory.pre_call_context;
+      }
+    }
+
+    // Fetch webhook URL if not already resolved
+    if (!phoneCallWebhookUrl) {
+      const { data: clientRow } = await supabase
+        .from("clients")
+        .select("phone_call_webhook_url")
+        .eq("id", clientId)
+        .single();
+      if (clientRow) {
+        phoneCallWebhookUrl = clientRow.phone_call_webhook_url;
+      }
+    }
+
+    // Fetch optional setter-level post-call webhook from prompt_configurations
+    if (normalizedSetterSlotId) {
+      const { data: setterConfig } = await supabase
+        .from("prompt_configurations")
+        .select("custom_content")
+        .eq("client_id", clientId)
+        .eq("slot_id", normalizedSetterSlotId)
+        .eq("config_key", "_retell_voice_settings")
+        .maybeSingle();
+
+      if (setterConfig?.custom_content) {
+        try {
+          const parsedConfig = JSON.parse(setterConfig.custom_content);
+          const candidateWebhook = typeof parsedConfig?.webhook_url === "string"
+            ? parsedConfig.webhook_url.trim()
+            : "";
+
+          if (candidateWebhook) {
+            setterPostWebhookUrl = candidateWebhook;
+            console.log(`✅ Setter post-call webhook resolved for ${normalizedSetterSlotId}`);
+          }
+        } catch (parseErr) {
+          console.warn(`⚠️ Failed to parse setter webhook config for ${normalizedSetterSlotId}:`, parseErr);
+        }
+      }
+    }
+
+    let record: Record<string, unknown> | null = null;
+
+    if (shouldPersistAnalyzedRecord) {
+      // ── Step 2: Build call_history record ──
+
+      // Compute duration_seconds from duration_ms or call_duration_ms
+      const durationMs = call.duration_ms ?? call.call_duration_ms ?? null;
+      const durationSeconds = typeof durationMs === "number" ? Math.round(durationMs / 1000) : null;
+
+      // Detect voicemail / human pickup from disconnection reason and analysis
+      const disconnectionReason = call.disconnection_reason || null;
+      const voicemailDetected = disconnectionReason === "voicemail_reached"
+        || call.call_analysis?.in_voicemail === true
+        || false;
+      const humanPickup = disconnectionReason !== "voicemail_reached"
+        && (call.call_status === "completed" || call.call_status === "ended")
+        && !voicemailDetected;
+
+      // Extract appointment data from custom_analysis_data if available
+      const customAnalysis = call.call_analysis?.custom_analysis_data || {};
+      const appointmentBooked = customAnalysis.appointment_booked === true
+        || customAnalysis.booked === true
+        || false;
+      const appointmentTime = customAnalysis.appointment_time || customAnalysis.booked_time || null;
+
+      // Build contact name from dynamic vars
+      const contactName = [dynamicVars.first_name, dynamicVars.last_name].filter(Boolean).join(" ") || null;
+
+      // Extract campaign_id from dynamic vars if available
+      const campaignId = dynamicVars.campaign_id || null;
+
+      record = {
+        client_id: clientId,
+        contact_id: contactId,
+        ghl_account_id: resolvedGhlAccountId,
+        call_id: callId,
+        agent_id: agentId,
+        setter_id: setterId,
+        campaign_id: campaignId,
+        contact_name: contactName,
+        from_number: call.from_number || null,
+        to_number: call.to_number || null,
+        call_type: call.call_type || null,
+        direction: call.direction || call.call_type || null,
+        call_status: call.call_status || call.status || "completed",
+        disconnect_reason: disconnectionReason,
+        start_timestamp: toIsoTimestamp(call.start_timestamp),
+        end_timestamp: toIsoTimestamp(call.end_timestamp),
+        duration_ms: durationMs,
+        duration_seconds: durationSeconds,
+        transcript: call.transcript || null,
+        transcript_object: call.transcript_object || null,
+        recording_url: call.recording_url || null,
+        public_log_url: call.public_log_url || null,
+        call_summary: call.call_analysis?.call_summary || null,
+        user_sentiment: call.call_analysis?.user_sentiment || null,
+        call_successful: call.call_analysis?.call_successful ?? null,
+        token_usage: call.llm_usage?.total_tokens ?? call.token_usage ?? null,
+        voicemail_detected: voicemailDetected,
+        human_pickup: humanPickup,
+        appointment_booked: appointmentBooked,
+        appointment_time: appointmentTime ? toIsoTimestamp(appointmentTime) : null,
+        custom_analysis_data: buildEnrichedAnalysisData(eventType, rawPayload, call, dynamicVars),
+        custom_data: call.metadata || null,
+        raw_payload: rawPayload,
+        cost: typeof call.cost === "number" ? call.cost : (typeof call.call_cost?.combined_cost === "number" ? Math.round(call.call_cost.combined_cost) / 100 : null),
+        latency_ms: call.latency || null,
+        updated_at: new Date().toISOString(),
+      };
+
+      if (existingPreCallContext !== undefined) {
+        record.pre_call_context = existingPreCallContext;
+      }
+
+      console.log(`📦 Storing analyzed call ${record.call_id} for client ${clientId}`);
+
+      // ── Step 3: Upsert (idempotent on call_id) ──
+
+      const { error: upsertErr } = await supabase
+        .from("call_history")
+        .upsert(record, { onConflict: "call_id" });
+
+      if (upsertErr) {
+        console.error(`❌ Failed to store call: ${upsertErr.message}`);
+
+        await supabase.from("error_logs").insert({
+          client_ghl_account_id: resolvedGhlAccountId || "unknown",
+          severity: "error",
+          source: "retell-call-analysis-webhook",
+          error_type: "call_history_insert_failed",
+          error_message: upsertErr.message,
+          context: { call_id: record.call_id, client_id: clientId },
+        });
+
+        // Still return 200 so Retell doesn't retry
+        return ok({ ok: false, error: upsertErr.message });
+      }
+
+      console.log(`✅ Call ${record.call_id} stored successfully`);
+
+      // ── Step 4: Sync to client's external Supabase ──
+
+      if (!externalSupabaseUrl || !externalServiceKey) {
+        const { data: clientRow } = await supabase
+          .from("clients")
+          .select("supabase_url, supabase_service_key")
+          .eq("id", clientId)
+          .single();
+        if (clientRow) {
+          externalSupabaseUrl = clientRow.supabase_url;
+          externalServiceKey = clientRow.supabase_service_key;
+        }
+      }
+
+      if (externalSupabaseUrl && externalServiceKey) {
+        console.log(`🔄 Starting external Supabase sync for analyzed call ${record.call_id} → ${externalSupabaseUrl}`);
+        try {
+          const externalSupabase = createClient(externalSupabaseUrl, externalServiceKey);
+          const mutableExtRecord: Record<string, unknown> = {
+            ...record,
+            lead_id: contactId,
+            disconnection_reason: call.disconnection_reason || null,
+            call_analysis: call.call_analysis || null,
+            metadata: call.metadata || null,
+            retell_dynamic_variables: dynamicVars,
+            transcript_with_tool_calls: call.transcript_with_tool_calls || null,
+            transfer_destination: rawPayload.transfer_destination || null,
+            transfer_option: rawPayload.transfer_option || null,
+            call_cost: call.cost ?? (typeof call.call_cost?.combined_cost === "number" ? Math.round(call.call_cost.combined_cost) / 100 : null),
+          };
+
+          // Also provide epoch-ms variants for external tables that use bigint timestamps
+          if (call.start_timestamp) mutableExtRecord.start_timestamp = call.start_timestamp;
+          if (call.end_timestamp) mutableExtRecord.end_timestamp = call.end_timestamp;
+
+          const maxRetries = 12;
+
+          for (let attempt = 0; attempt < maxRetries; attempt++) {
+            const { error } = await externalSupabase
+              .from("call_history")
+              .upsert(mutableExtRecord, { onConflict: "call_id" });
+
+            if (!error) {
+              console.log(`✅ Call ${record.call_id} synced to external call_history (attempt ${attempt + 1})`);
+              break;
+            }
+
+            const msg = error.message || "";
+            console.warn(`⚠️ External sync attempt ${attempt + 1} failed: ${msg}`);
+
+            const colMatch =
+              msg.match(/Could not find the '([^']+)' column/) ||
+              msg.match(/column "([^"]+)" of relation "[^"]+" does not exist/);
+
+            if (colMatch && Object.prototype.hasOwnProperty.call(mutableExtRecord, colMatch[1])) {
+              console.warn(`🔧 Stripping unsupported column '${colMatch[1]}' from external call_history`);
+              delete mutableExtRecord[colMatch[1]];
+              continue;
+            }
+
+            if (msg.includes("ON CONFLICT") || msg.includes("there is no unique")) {
+              console.warn(`⚠️ No unique constraint on call_id in external table, falling back to insert`);
+              const { error: insertErr } = await externalSupabase.from("call_history").insert(mutableExtRecord);
+              if (!insertErr) console.log(`✅ Call ${record.call_id} inserted into external call_history (fallback)`);
+              else console.error(`❌ External call_history insert also failed: ${insertErr.message}`);
+              break;
+            }
+
+            const typedColumnMatch = msg.match(/column "([^"]+)" is of type [^ ]+ but expression is of type [^ ]+/i);
+            if (typedColumnMatch) {
+              const typedColumn = typedColumnMatch[1];
+              const currentValue = mutableExtRecord[typedColumn];
+              if (EXTERNAL_STRINGIFIABLE_COLUMNS.has(typedColumn) && currentValue !== null && currentValue !== undefined && typeof currentValue !== "string") {
+                const serialized = safeJsonStringify(currentValue);
+                if (serialized !== null) {
+                  console.warn(`🔧 Serializing column '${typedColumn}' for external call_history compatibility`);
+                  mutableExtRecord[typedColumn] = serialized;
+                  continue;
+                }
+              }
+            }
+
+            // Handle type mismatch errors (e.g. bigint vs text) by serializing known JSON fields before stripping
+            const typeMismatch = msg.match(/invalid input syntax for type (\w+): "([^"]+)"/);
+            if (typeMismatch) {
+              const badValue = typeMismatch[2];
+              let handledMismatch = false;
+
+              for (const [k, v] of Object.entries(mutableExtRecord)) {
+                if (String(v) === badValue) {
+                  if (EXTERNAL_STRINGIFIABLE_COLUMNS.has(k) && v !== null && v !== undefined && typeof v !== "string") {
+                    const serialized = safeJsonStringify(v);
+                    if (serialized !== null) {
+                      console.warn(`🔧 Serializing type-mismatched column '${k}' for external call_history compatibility`);
+                      mutableExtRecord[k] = serialized;
+                      handledMismatch = true;
+                      break;
+                    }
+                  }
+
+                  console.warn(`🔧 Stripping type-mismatched column '${k}' (expected ${typeMismatch[1]})`);
+                  delete mutableExtRecord[k];
+                  handledMismatch = true;
+                  break;
+                }
+              }
+
+              if (handledMismatch) {
+                continue;
+              }
+            }
+
+            console.error(`❌ External call_history sync failed permanently: ${msg}`);
+            break;
+          }
+        } catch (extErr) {
+          console.error("❌ External Supabase sync exception:", extErr);
+        }
+      } else {
+        console.log(`ℹ️ No external Supabase credentials for client ${clientId}, skipping external sync`);
+      }
+
+      // ── Step 5: Fire post-call webhook(s) ──
+
+      const internalWebhookUrl = `${supabaseUrl}/functions/v1/retell-call-analysis-webhook`;
+      const webhookTargets = Array.from(
+        new Set(
+          [phoneCallWebhookUrl, setterPostWebhookUrl]
+            .map((url) => (typeof url === "string" ? url.trim() : ""))
+            .filter((url) => url.length > 0 && url !== internalWebhookUrl)
+        )
+      );
+
+      if (webhookTargets.length > 0) {
+        const webhookPayload = {
+          event: "call_completed",
+          retell_event: eventType,
+          call_id: record.call_id,
+          agent_id: agentId,
+          setter_id: setterId,
+          client_id: clientId,
+          contact_id: contactId,
+          lead_id: contactId,
+          ghl_account_id: resolvedGhlAccountId,
+          from_number: record.from_number,
+          to_number: record.to_number,
+          direction: record.direction,
+          call_status: record.call_status,
+          disconnect_reason: record.disconnect_reason,
+          disconnection_reason: call.disconnection_reason || null,
+          duration_ms: record.duration_ms,
+          call_summary: record.call_summary,
+          user_sentiment: record.user_sentiment,
+          call_successful: record.call_successful,
+          recording_url: record.recording_url,
+          transcript: record.transcript,
+          transcript_object: record.transcript_object,
+          transcript_with_tool_calls: call.transcript_with_tool_calls || null,
+          call_analysis: call.call_analysis || null,
+          custom_analysis_data: record.custom_analysis_data,
+          metadata: call.metadata || null,
+          start_timestamp: record.start_timestamp,
+          end_timestamp: record.end_timestamp,
+          cost: record.cost,
+          call_cost: call.cost ?? null,
+          dynamic_variables: dynamicVars,
+          retell_dynamic_variables: dynamicVars,
+          raw_payload: rawPayload,
+          pre_call_context: record.pre_call_context ?? null,
+        };
+
+        for (const webhookUrl of webhookTargets) {
+          try {
+            console.log(`🔔 Firing post-call webhook: ${webhookUrl}`);
+            const webhookResp = await fetch(webhookUrl, {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify(webhookPayload),
+            });
+
+            const webhookStatus = webhookResp.status;
+            const webhookBody = await webhookResp.text().catch(() => "");
+            console.log(`🔔 Post-call webhook response: ${webhookStatus} ${webhookBody.slice(0, 200)}`);
+          } catch (webhookErr) {
+            console.warn(`⚠️ Post-call webhook failed for ${webhookUrl}:`, webhookErr);
+          }
+        }
+      } else {
+        console.log("ℹ️ No external post-call webhook configured, skipping forward sync");
+      }
+    } else {
+      console.log(`ℹ️ Received ${eventType} for call ${callId}; waiting for call_analyzed before persisting full call history`);
+    }
+
+    // ── Step 6: Handle engagement workflow integration ──
+
+    const treatPickupAsReply = dynamicVars.treat_pickup_as_reply === "true";
+    const executionId: string | null = dynamicVars.execution_id || null;
+
+    if (treatPickupAsReply && executionId) {
+      const disconnectReason = call.disconnection_reason || "";
+      const callStatus = call.call_status || call.status || "";
+
+      const voicemailSignals = ["voicemail_reached", "voicemail", "machine_detected"];
+      const noConnectSignals = ["no_answer", "busy", "failed", "invalid_number", "service_unavailable"];
+
+      const isVoicemail = voicemailSignals.some(s =>
+        disconnectReason.toLowerCase().includes(s) || callStatus.toLowerCase().includes(s)
+      );
+      const isNoConnect = noConnectSignals.some(s =>
+        disconnectReason.toLowerCase().includes(s) || callStatus.toLowerCase().includes(s)
+      );
+
+      const isHumanPickup = !isVoicemail && !isNoConnect && callStatus !== "error";
+
+      if (isHumanPickup) {
+        console.log(`📞 Human pickup detected for execution ${executionId}. Treating as reply — ending engagement.`);
+
+        const { error: engUpdateErr } = await supabase
+          .from("engagement_executions")
+          .update({
+            status: "completed",
+            stop_reason: "human_pickup_treated_as_reply",
+            completed_at: new Date().toISOString(),
+            stage_description: "Call answered by human — engagement ended",
+          })
+          .eq("id", executionId)
+          .in("status", ["pending", "running"]);
+
+        if (engUpdateErr) {
+          console.error(`❌ Failed to update engagement execution: ${engUpdateErr.message}`);
+        } else {
+          console.log(`✅ Engagement ${executionId} marked as completed (human pickup)`);
+        }
+
+        const { data: execData } = await supabase
+          .from("engagement_executions")
+          .select("trigger_run_id")
+          .eq("id", executionId)
+          .single();
+
+        if (execData?.trigger_run_id) {
+          const triggerKey = Deno.env.get("TRIGGER_SECRET_KEY");
+          if (triggerKey) {
+            try {
+              const cancelRes = await fetch(
+                `https://api.trigger.dev/api/v2/runs/${execData.trigger_run_id}/cancel`,
+                {
+                  method: "POST",
+                  headers: {
+                    Authorization: `Bearer ${triggerKey}`,
+                    "Content-Type": "application/json",
+                  },
+                }
+              );
+              await cancelRes.text();
+              console.log(`✅ Cancelled TriggerDev run ${execData.trigger_run_id}`);
+            } catch (e) {
+              console.warn("Failed to cancel TriggerDev run:", e);
+            }
+          }
+        }
+      } else {
+        console.log(`📞 Call for execution ${executionId} was not a human pickup (${disconnectReason}/${callStatus}). Engagement continues.`);
+      }
+    }
+
+    return ok({ ok: true, synced: shouldPersistAnalyzedRecord, deferred: !shouldPersistAnalyzedRecord, call_id: callId });
+  } catch (err) {
+    console.error("Retell call analysis webhook error:", err);
+    const message = err instanceof Error ? err.message : "Internal server error";
+    return ok({ ok: false, error: message });
+  }
+});

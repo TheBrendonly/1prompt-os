@@ -1,0 +1,94 @@
+project_id = "YOUR_SUPABASE_PROJECT_ID"
+
+[functions.github-proxy]
+verify_jwt = false
+
+[functions.elevenlabs-manage-agent]
+verify_jwt = false
+
+[functions.analyze-metric]
+verify_jwt = false
+
+[functions.supabase-project-usage]
+verify_jwt = false
+
+[functions.refresh-usage-cache]
+verify_jwt = false
+
+[functions.generate-simulation-personas]
+verify_jwt = false
+
+[functions.run-simulation]
+verify_jwt = false
+
+[functions.generate-conversation-examples]
+verify_jwt = false
+
+[functions.analytics-v2-suggest-widgets]
+verify_jwt = false
+
+[functions.analytics-v2-process]
+verify_jwt = false
+
+[functions.analyze-simulation]
+verify_jwt = false
+
+[functions.stripe-checkout]
+verify_jwt = false
+
+[functions.stripe-portal]
+verify_jwt = false
+
+[functions.stripe-webhook]
+verify_jwt = false
+
+[functions.check-client-subscription]
+verify_jwt = false
+
+[functions.modify-prompt-ai]
+verify_jwt = false
+
+[functions.format-metric-chart]
+verify_jwt = false
+
+[functions.generate-setter-config]
+verify_jwt = false
+
+[functions.generate-simulation-report]
+verify_jwt = false
+
+[functions.workflow-inbound-webhook]
+verify_jwt = false
+
+[functions.push-dm-now]
+verify_jwt = false
+
+[functions.analyze-setter-prompt]
+verify_jwt = false
+
+[functions.run-analytics]
+verify_jwt = false
+
+[functions.compute-analytics]
+verify_jwt = false
+
+[functions.fix-business-messages]
+verify_jwt = false
+
+[functions.retell-call-webhook]
+verify_jwt = false
+
+[functions.retell-call-analysis-webhook]
+verify_jwt = false
+
+[functions.make-retell-outbound-call]
+verify_jwt = false
+
+[functions.fetch-thread-previews]
+verify_jwt = false
+
+[functions.twilio-list-numbers]
+verify_jwt = false
+
+[functions.sync-ghl-booking]
+verify_jwt = false

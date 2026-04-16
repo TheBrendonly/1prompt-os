@@ -1,0 +1,1 @@
+ALTER TABLE public.clients ADD COLUMN send_engagement_webhook_url TEXT DEFAULT NULL;

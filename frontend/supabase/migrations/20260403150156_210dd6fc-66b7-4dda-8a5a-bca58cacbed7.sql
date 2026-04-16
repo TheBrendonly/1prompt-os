@@ -1,0 +1,1 @@
+ALTER TABLE public.contacts RENAME COLUMN external_id TO contact_id;

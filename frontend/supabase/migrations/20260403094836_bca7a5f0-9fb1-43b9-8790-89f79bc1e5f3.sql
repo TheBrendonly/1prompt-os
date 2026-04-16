@@ -1,0 +1,1 @@
+ALTER TABLE public.clients ADD COLUMN IF NOT EXISTS crm_filter_config JSONB DEFAULT NULL;

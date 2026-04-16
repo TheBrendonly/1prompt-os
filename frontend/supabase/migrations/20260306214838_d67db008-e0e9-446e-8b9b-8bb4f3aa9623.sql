@@ -1,0 +1,1 @@
+ALTER TABLE public.custom_metrics ADD COLUMN IF NOT EXISTS sort_order integer DEFAULT 0;

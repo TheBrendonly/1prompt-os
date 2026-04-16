@@ -1,0 +1,16 @@
+{
+  "name": "1prompt-os",
+  "version": "1.0.0",
+  "dependencies": {
+    "@supabase/supabase-js": "^2.101.0",
+    "@trigger.dev/sdk": "^4.4.4"
+  },
+  "devDependencies": {
+    "@trigger.dev/build": "^4.4.4",
+    "typescript": "^5.0.0"
+  },
+  "scripts": {
+    "dev": "npx trigger.dev@latest dev",
+    "deploy": "npx trigger.dev@latest deploy"
+  }
+}

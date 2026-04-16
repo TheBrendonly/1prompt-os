@@ -331,15 +331,43 @@ The n8n workflow JSON files are shared separately in the course resources. There
 
 ## 7. Client Supabase Projects
 
-Each client has their own Supabase project (separate from your platform project). n8n reads and writes to this. Trigger.dev reads from it only for lead upserts and follow-up chat history writes.
+Each client has their own Supabase project — completely separate from your platform project. n8n reads and writes to this. Trigger.dev upserts leads here and writes follow-up messages to chat history.
 
-### Required Tables in Client Supabase
+Run `supabase/client-schema.sql` in each client's Supabase SQL Editor when onboarding them.
+
+### Tables in Client Supabase
 
 | Table | Purpose |
 |---|---|
-| `leads` | Contact records. Trigger.dev upserts here when a new lead is seen. |
-| `chat_history` | Full conversation log. n8n reads this for context. Follow-up task writes here after sending. |
-| `text_prompts` | Setter system prompts. n8n reads the prompt matching `card_name = 'Setter-1'` (or Setter-2, etc.) |
+| `leads` | Contact records. Primary key is the GHL Contact_ID (text, not UUID). Trigger.dev upserts here when a new lead is seen for the first time. |
+| `chat_history` | Full conversation log. `session_id` = GHL Contact_ID. n8n reads the last 30 messages for context before every LLM call. Follow-up task writes here after sending a follow-up. |
+| `text_prompts` | Setter system prompts. n8n reads the row where `card_name = 'Setter-1'` (or `'Setter-2'`, etc.). Written and managed from the 1Prompt dashboard. |
+
+### chat_history Message Format
+
+Each row's `message` column is a JSON object following the LangChain message format:
+
+```json
+// Inbound message from the lead
+{
+  "type": "human",
+  "content": "Hey I'm interested",
+  "additional_kwargs": {},
+  "response_metadata": {}
+}
+
+// Outbound reply from the setter
+{
+  "type": "ai",
+  "content": "Hey! Thanks for reaching out...",
+  "tool_calls": [],
+  "invalid_tool_calls": [],
+  "additional_kwargs": {},
+  "response_metadata": {}
+}
+```
+
+n8n must write messages in this exact format for the follow-up task to correctly parse conversation history.
 
 ### Credentials Storage
 

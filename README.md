@@ -57,7 +57,8 @@ Each client also has their own Supabase project (for leads, chat history, prompt
 │   ├── executeWorkflow.ts     ← GHL workflow node execution
 │   └── placeOutboundCall.ts   ← outbound call triggering
 ├── supabase/
-│   └── schema.sql             ← full platform database schema (run once)
+│   ├── schema.sql             ← platform database schema — run in YOUR Supabase project
+│   └── client-schema.sql      ← client database schema — run in each CLIENT'S Supabase project
 ├── trigger.config.ts          ← Trigger.dev project config
 ├── package.json
 └── .env.example               ← all required environment variables

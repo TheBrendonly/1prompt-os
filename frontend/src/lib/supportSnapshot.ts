@@ -1,6 +1,6 @@
 import { supabase } from '@/integrations/supabase/client';
 
-export const SUPPORT_EMAIL = 'support@1prompt.com';
+export const SUPPORT_EMAIL = 'brendan@buildingflowdigital.com';
 
 export interface SnapshotData {
   accountEmail: string | null;

@@ -28,12 +28,39 @@ serve(async (req) => {
       });
     }
 
-    const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY");
-    if (!LOVABLE_API_KEY) throw new Error("LOVABLE_API_KEY not configured");
-
     const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
     const supabaseKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
     const supabase = createClient(supabaseUrl, supabaseKey);
+
+    // Resolve clientId from simulation row if the caller didn't pass one (frontend currently doesn't).
+    let resolvedClientId = clientId as string | undefined;
+    if (!resolvedClientId) {
+      const { data: simRow, error: simRowErr } = await supabase
+        .from("simulations")
+        .select("client_id")
+        .eq("id", simulationId)
+        .single();
+      if (simRowErr || !simRow?.client_id) {
+        return new Response(JSON.stringify({ error: "Simulation not found or has no client_id" }), {
+          status: 404, headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+      resolvedClientId = simRow.client_id as string;
+    }
+
+    // OpenRouter API key (per-client) — replaces the legacy Lovable AI gateway path
+    const { data: clientRow, error: clientErr } = await supabase
+      .from("clients")
+      .select("openrouter_api_key")
+      .eq("id", resolvedClientId)
+      .single();
+
+    if (clientErr || !clientRow?.openrouter_api_key) {
+      return new Response(JSON.stringify({ error: "OpenRouter API key not configured. Please add it in API Credentials." }), {
+        status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+    const openrouterApiKey = clientRow.openrouter_api_key as string;
 
     // Fetch existing avatar seeds to avoid duplicates
     const { data: existingPersonas } = await supabase
@@ -142,17 +169,19 @@ Return ONLY a JSON array of ${numPersonas} persona objects. No markdown fences, 
     };
 
     const response = await loggedFetch(
-      "https://ai.gateway.lovable.dev/v1/chat/completions",
+      "https://openrouter.ai/api/v1/chat/completions",
       {
         method: "POST",
         headers: {
-          Authorization: `Bearer ${LOVABLE_API_KEY}`,
+          Authorization: `Bearer ${openrouterApiKey}`,
           "Content-Type": "application/json",
+          "HTTP-Referer": "https://1prompt.ai",
+          "X-Title": "1Prompt Simulation Personas Generator",
         },
         body: JSON.stringify(llmRequestBody),
       },
       {
-        client_id: clientId,
+        client_id: resolvedClientId,
         request_type: "llm",
         source: "generate-simulation-personas",
         method: "POST",
@@ -163,9 +192,9 @@ Return ONLY a JSON array of ${numPersonas} persona objects. No markdown fences, 
 
     if (!response.ok) {
       const errText = await response.text();
-      console.error("AI gateway error:", response.status, errText);
+      console.error("OpenRouter error:", response.status, errText);
       if (response.status === 402) {
-        return new Response(JSON.stringify({ error: "AI gateway credits exhausted. Please top up your Cloud & AI balance in Lovable Settings → Workspace." }), {
+        return new Response(JSON.stringify({ error: "OpenRouter credits exhausted. Please top up your OpenRouter balance." }), {
           status: 402, headers: { ...corsHeaders, "Content-Type": "application/json" },
         });
       }
@@ -174,7 +203,7 @@ Return ONLY a JSON array of ${numPersonas} persona objects. No markdown fences, 
           status: 429, headers: { ...corsHeaders, "Content-Type": "application/json" },
         });
       }
-      throw new Error(`AI gateway error: ${response.status}`);
+      throw new Error(`OpenRouter error: ${response.status}`);
     }
 
     const aiData = await response.json();

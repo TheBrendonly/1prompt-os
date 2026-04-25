@@ -21,9 +21,6 @@ serve(async (req) => {
       });
     }
 
-    const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY");
-    if (!LOVABLE_API_KEY) throw new Error("LOVABLE_API_KEY not configured");
-
     const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
     const supabaseKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
     const supabase = createClient(supabaseUrl, supabaseKey);
@@ -51,14 +48,18 @@ serve(async (req) => {
 
     const { data: client, error: clientError } = await supabase
       .from("clients")
-      .select("simulation_webhook, ghl_location_id")
+      .select("simulation_webhook, ghl_location_id, openrouter_api_key")
       .eq("id", simulation.client_id)
       .single();
     if (clientError || !client?.simulation_webhook) {
       throw new Error("Client simulation_webhook not configured. Please add your Simulation webhook URL in the credentials page.");
     }
+    if (!client?.openrouter_api_key) {
+      throw new Error("OpenRouter API key not configured. Please add it in API Credentials.");
+    }
 
     const webhookBaseUrl = client.simulation_webhook;
+    const openrouterApiKey = client.openrouter_api_key as string;
 
     // If no specific persona, set simulation status and queue all runnable personas.
     if (!personaId) {
@@ -216,7 +217,7 @@ serve(async (req) => {
           if (isFirstMessage && leadType === 'engagement') {
             // Form lead: generate a form submission message
             userMessage = await generateFormSubmissionMessage(
-              LOVABLE_API_KEY,
+              openrouterApiKey,
               persona,
               icpProfile?.form_fields || '',
               icpProfile?.first_message_detail || '',
@@ -239,7 +240,7 @@ serve(async (req) => {
             }
             // Generate the lead's response to the outreach
             userMessage = await generateOutreachResponseMessage(
-              LOVABLE_API_KEY,
+              openrouterApiKey,
               persona,
               outreachMsg,
               icpProfile?.first_message_detail || '',
@@ -248,7 +249,7 @@ serve(async (req) => {
             firstMessageType = 'regular';
           } else {
             userMessage = await generateUserMessage(
-              LOVABLE_API_KEY,
+              openrouterApiKey,
               persona,
               conversationHistory,
               turnIndex,
@@ -744,11 +745,13 @@ ${bookingInstructions}`;
         : `Generate your next message as ${persona.name}. Turn ${turnIndex + 1} of ${totalTurns}.`,
   });
 
-  const response = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
+  const response = await fetch("https://openrouter.ai/api/v1/chat/completions", {
     method: "POST",
     headers: {
       Authorization: `Bearer ${apiKey}`,
       "Content-Type": "application/json",
+      "HTTP-Referer": "https://1prompt.ai",
+      "X-Title": "1Prompt Simulation Run",
     },
     body: JSON.stringify({
       model: "google/gemini-2.5-flash",
@@ -821,11 +824,13 @@ RULES:
 - For service selection fields, pick something relevant to the business
 - Output ONLY the form submission block, nothing else`;
 
-  const response = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
+  const response = await fetch("https://openrouter.ai/api/v1/chat/completions", {
     method: "POST",
     headers: {
       Authorization: `Bearer ${apiKey}`,
       "Content-Type": "application/json",
+      "HTTP-Referer": "https://1prompt.ai",
+      "X-Title": "1Prompt Simulation Run",
     },
     body: JSON.stringify({
       model: "google/gemini-2.5-flash",
@@ -876,11 +881,13 @@ RULES:
 - DO NOT break character. DO NOT mention you are an AI or this is a simulation.
 - ONLY output the message text, nothing else. No quotes, no labels.`;
 
-  const response = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
+  const response = await fetch("https://openrouter.ai/api/v1/chat/completions", {
     method: "POST",
     headers: {
       Authorization: `Bearer ${apiKey}`,
       "Content-Type": "application/json",
+      "HTTP-Referer": "https://1prompt.ai",
+      "X-Title": "1Prompt Simulation Run",
     },
     body: JSON.stringify({
       model: "google/gemini-2.5-flash",

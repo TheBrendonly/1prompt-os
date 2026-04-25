@@ -62,15 +62,7 @@ Deno.serve(async (req) => {
 
     const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
     const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
-    const triggerSecretKey = Deno.env.get("TRIGGER_SECRET_KEY");
     const supabase = createClient(supabaseUrl, serviceKey);
-
-    if (!triggerSecretKey) {
-      return new Response(
-        JSON.stringify({ error: "TRIGGER_SECRET_KEY not configured" }),
-        { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-      );
-    }
 
     // Step 1: Look up client credentials
     const { data: client, error: clientError } = await supabase
@@ -117,73 +109,65 @@ Deno.serve(async (req) => {
 
     const executionId = execution.id;
 
-    // Step 3: Trigger the Trigger.dev task
-    let triggerRunId: string | null = null;
-    try {
-      const triggerResponse = await fetch(
-        "https://api.trigger.dev/api/v1/tasks/compute-analytics/trigger",
-        {
-          method: "POST",
-          headers: {
-            Authorization: `Bearer ${triggerSecretKey}`,
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({
-            payload: {
-              execution_id: executionId,
-              client_id: clientId,
-              time_range: timeRange || "7",
-              start_date: startDate || null,
-              end_date: endDate || null,
-              default_metrics: defaultMetrics || [],
-              custom_metrics: customMetrics || [],
-              analytics_type: analyticsType || "text",
-              client_supabase_url: client.supabase_url,
-              client_supabase_service_key: client.supabase_service_key,
-              client_supabase_table_name: client.supabase_table_name,
-              openrouter_api_key: openrouterKey,
-            },
-          }),
+    // Step 3: Fire-and-forget invoke the compute-analytics edge function. It updates
+    // analytics_executions row stage_description / status as it progresses, so the
+    // frontend's poller picks up state without us blocking the original request.
+    const computeAnalyticsPromise = fetch(`${supabaseUrl}/functions/v1/compute-analytics`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${serviceKey}`,
+        apikey: serviceKey,
+      },
+      body: JSON.stringify({
+        execution_id: executionId,
+        client_id: clientId,
+        time_range: timeRange || "7",
+        start_date: startDate || null,
+        end_date: endDate || null,
+        default_metrics: defaultMetrics || [],
+        custom_metrics: customMetrics || [],
+        analytics_type: analyticsType || "text",
+        client_supabase_url: client.supabase_url,
+        client_supabase_service_key: client.supabase_service_key,
+        client_supabase_table_name: client.supabase_table_name,
+        openrouter_api_key: openrouterKey,
+      }),
+    })
+      .then(async (response) => {
+        if (!response.ok) {
+          const errText = await response.text();
+          console.error(`[run-analytics] compute-analytics returned ${response.status}: ${errText.slice(0, 400)}`);
+          await supabase
+            .from("analytics_executions")
+            .update({
+              status: "failed",
+              error_message: `compute-analytics edge function returned ${response.status}: ${errText.slice(0, 200)}`,
+              completed_at: new Date().toISOString(),
+            })
+            .eq("id", executionId);
         }
-      );
+      })
+      .catch(async (err: any) => {
+        console.error(`[run-analytics] compute-analytics invoke failed:`, err);
+        await supabase
+          .from("analytics_executions")
+          .update({
+            status: "failed",
+            error_message: `Failed to invoke compute-analytics: ${err?.message ?? String(err)}`,
+            completed_at: new Date().toISOString(),
+          })
+          .eq("id", executionId);
+      });
 
-      if (!triggerResponse.ok) {
-        const errText = await triggerResponse.text();
-        throw new Error(`Trigger.dev API returned ${triggerResponse.status}: ${errText.slice(0, 200)}`);
-      }
-
-      const triggerResult = await triggerResponse.json();
-      triggerRunId = triggerResult.id || null;
-    } catch (triggerError: any) {
-      // If Trigger.dev call fails, mark execution as failed
-      await supabase
-        .from("analytics_executions")
-        .update({
-          status: "failed",
-          error_message: `Failed to trigger computation: ${triggerError.message}`,
-          completed_at: new Date().toISOString(),
-        })
-        .eq("id", executionId);
-
-      return new Response(
-        JSON.stringify({
-          execution_id: executionId,
-          status: "failed",
-          error: triggerError.message,
-        }),
-        { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-      );
+    const edgeRuntime = (globalThis as any).EdgeRuntime;
+    if (edgeRuntime?.waitUntil) {
+      edgeRuntime.waitUntil(computeAnalyticsPromise);
+    } else {
+      void computeAnalyticsPromise;
     }
 
-    // Step 4: Update execution with trigger_run_id
-    if (triggerRunId) {
-      await supabase
-        .from("analytics_executions")
-        .update({ trigger_run_id: triggerRunId })
-        .eq("id", executionId);
-    }
-
-    console.info("Analytics run triggered via Trigger.dev", { executionId, clientId, triggerRunId, timeRange });
+    console.info("Analytics run dispatched to compute-analytics edge function", { executionId, clientId, timeRange });
 
     return new Response(
       JSON.stringify({

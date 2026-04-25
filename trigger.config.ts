@@ -1,7 +1,7 @@
 import { defineConfig } from "@trigger.dev/sdk/v3";
 
 export default defineConfig({
-  project: "YOUR_TRIGGER_PROJECT_ID",
+  project: "proj_fdozaybvhgxnzopabtse",
   // Replace with your Trigger.dev project ID.
   // Found in your Trigger.dev dashboard → Project Settings.
 

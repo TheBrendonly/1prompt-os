@@ -200,6 +200,7 @@ export const processMessages = task({
         const n8nParams = new URLSearchParams({
           Message_Body: groupedMessage,
           Lead_ID: lead_id,
+          Contact_ID: lead_id, // n8n getGHL_Conversations node expects Contact_ID (same value as Lead_ID)
           GHL_Account_ID: ghl_account_id,
           Name: contact_name ?? "",
           Email: contact_email ?? "",

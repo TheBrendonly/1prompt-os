@@ -594,7 +594,67 @@ The Edge Function that triggers `run-ai-job` is not passing the correct `TRIGGER
 
 ---
 
-## 14. Fully Managed Option
+## 14. Known Gaps & Parked Items (as of Phase 5)
+
+These are real but deferred — surfaced here so the next person to touch the codebase doesn't have to rediscover them.
+
+### Analytics V2 — parked, text-only
+
+`frontend/src/pages/AnalyticsV2.tsx` is a leaner second-generation analytics UI with richer chart types (line / bar / doughnut / text via Recharts), an LLM model picker, custom date ranges, and AI-suggested widget types when creating metrics. It uses a single `dashboard_widgets` table (jsonb-keyed `config.chart_data`) instead of V1's `custom_metrics` + `chat_analytics` split, and a separate `analytics-v2-process` edge function.
+
+**Why it's parked:**
+- **Text-only.** `analytics-v2-process` reads from `clients.supabase_table_name` (defaults to `chat_history`) and the LLM prompt explicitly says "chatbot conversations." Zero references to voice, transcripts, or Retell anywhere in the V2 page or edge function. V1 has a separate voice route that V2 doesn't.
+- **No default metrics.** Every widget is user-created — there's no auto-seeded "Total Conversations" / "New Users" baseline.
+- **No layout customization parity.** V1 supports separator names, drag-to-reorder, color pickers per metric, all saved to `clients.crm_filter_config`. V2 has none of that.
+- **Not in sidebar nav.** Route exists at `/client/:clientId/analytics-v2` (`frontend/src/App.tsx`) but no nav entry — has to be reached by direct URL.
+
+**To unpark V2 as a V1 replacement, you would need to:**
+1. Add voice data source support to `analytics-v2-process` (read voice_chat_analytics or call_history table when analytics_type='voice')
+2. Add default-metric seeding (or accept blank canvas UX)
+3. Add layout customization parity (or accept it as a deliberate UX change)
+4. Add a sidebar nav entry
+
+Estimated 1-2 day sprint to reach parity. Not a drop-in swap.
+
+### Voice analytics is a frontend-only stub
+
+V1 has a Voice Analytics page (`/client/:clientId/analytics/voice-ai/dashboard`, now linked from the sidebar) and a separate `voice_chat_analytics` table on the platform Supabase, but **the backend doesn't actually differentiate text from voice data sources.** `frontend/supabase/functions/compute-analytics/index.ts` auto-resolves the same chat history table (`chat_history`, `messages_history`, `conversations_history`, `call_history` — picks the first one that exists on the client's external Supabase) regardless of the requested `analytics_type`. There is no Retell→Supabase pipeline writing real call transcripts to a voice-specific table.
+
+For now, clicking REFRESH on the voice page will populate cards with the same numbers as the text page (since both compute from the same data source).
+
+**To make voice analytics real:**
+1. Add a Retell webhook handler that writes call transcripts to a `voice_chat_history` (or `call_history`) table on each client's external Supabase
+2. Update `compute-analytics` to use that table when `analytics_type='voice'`
+
+### n8n `respondToWebhook` returns empty body — production-blocking
+
+Confirmed via direct curl probes: the Text Engine Setter n8n workflow on `https://primary-production-392b.up.railway.app` always returns HTTP 200 with 0-byte body, even though the `Simulation Response1` (respondToWebhook) node fires successfully with the bot's reply data populated. The same issue affects every workflow on this n8n instance — `Prompt Management`'s 39-byte responses turned out to be n8n's generic `{"message":"Workflow execution failed"}` error envelope, not real respondToWebhook output. Tried 6 config variants (typeVersion 1.1 vs 1.5, `firstIncomingItem` vs explicit `json` body, hardcoded body, `responseMode: lastNode`); none changed the empty-body behavior.
+
+**Production impact:** `trigger/processMessages.ts` lines 235-237 explicitly throw `n8n returned an empty response body` when this happens. Means real GHL setter traffic is currently broken at the response layer. Likely unnoticed because no real leads are coming through right now.
+
+**To fix:** either upgrade/restart n8n on Railway (this looks like a known n8n bug worth checking issues for), or pivot the simulator + processMessages to an async-polling architecture (n8n POSTs the reply to a Supabase edge function which writes to a table; consumers poll that table). The latter is more robust but requires both edge function and processMessages changes.
+
+A defensive improvement was kept in place: the `# Is Booking Function Needed?` IF node now has `Simulation !== "True"` as a second AND condition, so when n8n IS fixed and simulation runs, the LLM won't get GHL booking tools attached and won't write to your real CRM. Workflow JSON otherwise restored to its original baseline.
+
+### Supabase RLS — 10 public tables exposed
+
+Supabase security alert from 19 Apr 2026 flagged 10 tables in `public` schema with RLS disabled AND grants to the `anon` role with full read/write/delete access on the bfd-platform project (`bjgrgbgykvjrsuwwruoh`):
+
+| Table | Sensitivity |
+|---|---|
+| `credentials` | critical — client API keys, OpenRouter/GHL tokens |
+| `agent_settings` | critical — agent prompts and config |
+| `leads` | PII / client lead data |
+| `openrouter_usage` | cost tracking |
+| `ai_generation_jobs`, `error_logs`, `active_trigger_runs`, `dm_executions`, `followup_timers`, `message_queue` | backend-only operational |
+
+Anyone with the anon key (which ships in the frontend bundle) can read or modify these via PostgREST.
+
+**Fix needs:** auditing each table's actual access pattern (frontend reads vs backend-only), then either enabling RLS with no policies (backend-only — service role bypasses) or designing agency-scoped policies (for `agent_settings`, `leads`, `credentials`). Not a one-line fix — risks breaking the production setter pipeline if done blindly.
+
+---
+
+## 15. Fully Managed Option
 
 Setting up and maintaining this stack requires ongoing configuration, monitoring, prompt engineering, and debugging across five interconnected services. Most people who attempt a self-hosted setup spend weeks getting to a working state, and further time maintaining it as GHL, n8n, and model APIs change.
 

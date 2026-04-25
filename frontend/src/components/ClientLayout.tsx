@@ -809,7 +809,15 @@ function ClientSidebar() {
                 <SidebarMenuButton asChild>
                   <NavLink to={`/client/${clientId}/analytics/chatbot/dashboard`} className="flex items-center gap-3 px-3 py-2 transition-colors hover:bg-muted/50 sidebar-nav-item" activeClassName="bg-primary/10 text-primary border-l-2 border-primary">
                     <span className="w-4 text-center text-foreground" style={{ fontFamily: "'IBM Plex Mono', monospace", fontSize: '14px' }}>▤</span>
-                    <span>Analytics</span>
+                    <span>Text Analytics</span>
+                  </NavLink>
+                </SidebarMenuButton>
+              </SidebarMenuItem>
+              <SidebarMenuItem>
+                <SidebarMenuButton asChild>
+                  <NavLink to={`/client/${clientId}/analytics/voice-ai/dashboard`} className="flex items-center gap-3 px-3 py-2 transition-colors hover:bg-muted/50 sidebar-nav-item" activeClassName="bg-primary/10 text-primary border-l-2 border-primary">
+                    <span className="w-4 text-center text-foreground" style={{ fontFamily: "'IBM Plex Mono', monospace", fontSize: '14px' }}>▥</span>
+                    <span>Voice Analytics</span>
                   </NavLink>
                 </SidebarMenuButton>
               </SidebarMenuItem>

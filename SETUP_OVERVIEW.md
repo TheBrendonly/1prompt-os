@@ -626,13 +626,11 @@ For now, clicking REFRESH on the voice page will populate cards with the same nu
 1. Add a Retell webhook handler that writes call transcripts to a `voice_chat_history` (or `call_history`) table on each client's external Supabase
 2. Update `compute-analytics` to use that table when `analytics_type='voice'`
 
-### n8n `respondToWebhook` empty body (resolved 2026-04-26 by downgrade to 2.15.1)
+### n8n `respondToWebhook` empty body (resolved 2026-04-26 by upgrade to 2.17.7)
 
-The Railway-hosted n8n was on version `2.16.1`, which introduced a Wait-node regression ([n8n#28462](https://github.com/n8n-io/n8n/issues/28462), still open as of 2026-04-26 — internal Linear ticket GHC-7731) that causes any workflow combining a Wait node + Respond-to-Webhook node to return HTTP 200 with a 0-byte body. The Text Engine Setter workflow has both, so every setter call was breaking at [`trigger/processMessages.ts:235`](trigger/processMessages.ts) — real GHL traffic was silently broken at the response layer since the 2.16 upgrade.
+The Railway-hosted n8n was on version `2.16.1`, which introduced a Wait-node regression ([n8n#28462](https://github.com/n8n-io/n8n/issues/28462), still open with internal Linear ticket GHC-7731) that broke any workflow combining a Wait + Respond-to-Webhook node — the Text Engine Setter has both, so every setter call returned HTTP 200 with 0 bytes. Real GHL traffic was silently broken at the response layer since the 2.16 upgrade ([`trigger/processMessages.ts:235`](trigger/processMessages.ts) explicitly throws on empty body).
 
-**Fix:** downgraded both Primary and Worker services in Railway from `n8nio/n8n:2.16.1` → `n8nio/n8n:2.15.1`, with auto-updates disabled to prevent another silent bump. Verified post-downgrade: webhook returns 262 bytes of real JSON containing `Message_1` / `Message_2` / `Message_3`; Run Simulation produced 6 successful multi-turn persona conversations end-to-end.
-
-**Stay on 2.15.1** until n8n ships a fix for #28462. Re-enable auto-updates only when the issue is closed and 2.18.x or later confirms a wait-node fix in release notes.
+**Fix:** upgraded both Primary and Worker services in Railway from `n8nio/n8n:2.16.1` → `n8nio/n8n:2.17.7`, with auto-updates disabled to prevent another silent bump. Verified post-upgrade: webhook returns 262 bytes of real JSON containing `Message_1` / `Message_2` / `Message_3`; Run Simulation produced 6 successful multi-turn persona conversations end-to-end. (Notably, #28462 is still listed as open and 2.17.7's release notes don't call out a wait-node fix — but empirically the bug is gone in 2.17.7.)
 
 The `# Is Booking Function Needed?` IF node retains the defensive `Simulation !== "True"` second AND condition added in Phase 5b — simulated personas still can't trigger GHL booking tools.
 

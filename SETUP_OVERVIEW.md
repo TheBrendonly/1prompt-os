@@ -626,31 +626,26 @@ For now, clicking REFRESH on the voice page will populate cards with the same nu
 1. Add a Retell webhook handler that writes call transcripts to a `voice_chat_history` (or `call_history`) table on each client's external Supabase
 2. Update `compute-analytics` to use that table when `analytics_type='voice'`
 
-### n8n `respondToWebhook` returns empty body — production-blocking
+### n8n `respondToWebhook` empty body (resolved 2026-04-26 by downgrade to 2.15.1)
 
-Confirmed via direct curl probes: the Text Engine Setter n8n workflow on `https://primary-production-392b.up.railway.app` always returns HTTP 200 with 0-byte body, even though the `Simulation Response1` (respondToWebhook) node fires successfully with the bot's reply data populated. The same issue affects every workflow on this n8n instance — `Prompt Management`'s 39-byte responses turned out to be n8n's generic `{"message":"Workflow execution failed"}` error envelope, not real respondToWebhook output. Tried 6 config variants (typeVersion 1.1 vs 1.5, `firstIncomingItem` vs explicit `json` body, hardcoded body, `responseMode: lastNode`); none changed the empty-body behavior.
+The Railway-hosted n8n was on version `2.16.1`, which introduced a Wait-node regression ([n8n#28462](https://github.com/n8n-io/n8n/issues/28462), still open as of 2026-04-26 — internal Linear ticket GHC-7731) that causes any workflow combining a Wait node + Respond-to-Webhook node to return HTTP 200 with a 0-byte body. The Text Engine Setter workflow has both, so every setter call was breaking at [`trigger/processMessages.ts:235`](trigger/processMessages.ts) — real GHL traffic was silently broken at the response layer since the 2.16 upgrade.
 
-**Production impact:** `trigger/processMessages.ts` lines 235-237 explicitly throw `n8n returned an empty response body` when this happens. Means real GHL setter traffic is currently broken at the response layer. Likely unnoticed because no real leads are coming through right now.
+**Fix:** downgraded both Primary and Worker services in Railway from `n8nio/n8n:2.16.1` → `n8nio/n8n:2.15.1`, with auto-updates disabled to prevent another silent bump. Verified post-downgrade: webhook returns 262 bytes of real JSON containing `Message_1` / `Message_2` / `Message_3`; Run Simulation produced 6 successful multi-turn persona conversations end-to-end.
 
-**To fix:** either upgrade/restart n8n on Railway (this looks like a known n8n bug worth checking issues for), or pivot the simulator + processMessages to an async-polling architecture (n8n POSTs the reply to a Supabase edge function which writes to a table; consumers poll that table). The latter is more robust but requires both edge function and processMessages changes.
+**Stay on 2.15.1** until n8n ships a fix for #28462. Re-enable auto-updates only when the issue is closed and 2.18.x or later confirms a wait-node fix in release notes.
 
-A defensive improvement was kept in place: the `# Is Booking Function Needed?` IF node now has `Simulation !== "True"` as a second AND condition, so when n8n IS fixed and simulation runs, the LLM won't get GHL booking tools attached and won't write to your real CRM. Workflow JSON otherwise restored to its original baseline.
+The `# Is Booking Function Needed?` IF node retains the defensive `Simulation !== "True"` second AND condition added in Phase 5b — simulated personas still can't trigger GHL booking tools.
 
-### Supabase RLS — 10 public tables exposed
+### Supabase RLS — 10 public tables exposed (resolved 2026-04-26)
 
-Supabase security alert from 19 Apr 2026 flagged 10 tables in `public` schema with RLS disabled AND grants to the `anon` role with full read/write/delete access on the bfd-platform project (`bjgrgbgykvjrsuwwruoh`):
+Supabase security alert from 19 Apr 2026 flagged 10 tables in `public` schema with RLS disabled and `anon` role grants on the bfd-platform project (`bjgrgbgykvjrsuwwruoh`).
 
-| Table | Sensitivity |
-|---|---|
-| `credentials` | critical — client API keys, OpenRouter/GHL tokens |
-| `agent_settings` | critical — agent prompts and config |
-| `leads` | PII / client lead data |
-| `openrouter_usage` | cost tracking |
-| `ai_generation_jobs`, `error_logs`, `active_trigger_runs`, `dm_executions`, `followup_timers`, `message_queue` | backend-only operational |
+**Resolved by `frontend/supabase/migrations/20260426100000_bfd_platform_rls_audit.sql`:**
+- Backend-only tables (`active_trigger_runs`, `message_queue`, `openrouter_usage`): RLS enabled with no policies — service role bypasses, anon blocked.
+- Frontend-touched with `client_id` (`agent_settings`, `leads`, `ai_generation_jobs`, `followup_timers`, `error_logs`): agency-scoped policies via `client_id IN (SELECT clients.id FROM clients WHERE clients.agency_id = (SELECT profiles.agency_id FROM profiles WHERE profiles.id = auth.uid()))`.
+- No-`client_id` tables (`credentials` via `gohighlevel_location_id`, `dm_executions` via `ghl_account_id`): same agency-scoped policy with a JOIN through `clients.ghl_location_id`.
 
-Anyone with the anon key (which ships in the frontend bundle) can read or modify these via PostgREST.
-
-**Fix needs:** auditing each table's actual access pattern (frontend reads vs backend-only), then either enabling RLS with no policies (backend-only — service role bypasses) or designing agency-scoped policies (for `agent_settings`, `leads`, `credentials`). Not a one-line fix — risks breaking the production setter pipeline if done blindly.
+Verified post-migration: anon-key probes against all 10 tables return `[]`. Pre-migration probes returned every row.
 
 ---
 

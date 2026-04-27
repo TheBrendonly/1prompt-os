@@ -404,10 +404,20 @@ serve(async (req) => {
       }
     } catch (err) {
       console.error(`Error processing persona ${persona.name}:`, err);
-      await supabase
-        .from("simulation_personas")
-        .update({ status: "error" })
-        .eq("id", persona.id);
+      const errorMessage = err instanceof Error
+        ? `${err.name}: ${err.message}`
+        : String(err);
+      // Always flip persona out of in_progress, even if recovery UPDATE itself fails.
+      // Without this nested guard, a recovery failure left personas stuck in_progress
+      // and the run hung waiting for the "all done" check (Phase 7e regression).
+      try {
+        await supabase
+          .from("simulation_personas")
+          .update({ status: "error", error_message: errorMessage.slice(0, 2000) })
+          .eq("id", persona.id);
+      } catch (recoveryErr) {
+        console.error(`Recovery UPDATE failed for persona ${persona.name}:`, recoveryErr);
+      }
       personaStatusAfterRun = "error";
     }
 

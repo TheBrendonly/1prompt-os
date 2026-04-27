@@ -329,7 +329,7 @@ Deno.serve(async (req) => {
 
     const { data: client, error: clientError } = await supabase
       .from("clients")
-      .select("id, dm_enabled, dm_debounce_seconds, text_engine_webhook, supabase_url, supabase_service_key")
+      .select("id, dm_enabled, debounce_seconds, text_engine_webhook, supabase_url, supabase_service_key")
       .eq("ghl_location_id", ghlAccountId)
       .maybeSingle();
 
@@ -397,9 +397,9 @@ Deno.serve(async (req) => {
       );
     }
 
-    const legacyClientDelay = client.dm_debounce_seconds ?? 60;
+    const legacyClientDelay = client.debounce_seconds ?? 60;
     let debounceSeconds = setterSlotId ? 60 : legacyClientDelay;
-    let delaySource = setterSlotId ? "default" : (client.dm_debounce_seconds != null ? "legacy_client" : "default");
+    let delaySource = setterSlotId ? "default" : (client.debounce_seconds != null ? "legacy_client" : "default");
 
     if (setterSlotId) {
       const { data: agentSetting } = await supabase
@@ -487,7 +487,7 @@ Deno.serve(async (req) => {
     if (activeRun?.trigger_run_id) {
       const { data: existingExec } = await supabase
         .from("dm_executions")
-        .select("id, status, messages_received, messages, trigger_payload, resume_at")
+        .select("id, status, messages_received, trigger_payload, resume_at")
         .eq("trigger_run_id", activeRun.trigger_run_id)
         .maybeSingle();
 
@@ -496,8 +496,6 @@ Deno.serve(async (req) => {
         executionId = existingExec.id;
         originalResumeAt = existingExec.resume_at;
         nextMessageCount = (existingExec.messages_received || 1) + 1;
-        const existingMessages = Array.isArray(existingExec.messages) ? existingExec.messages : [];
-        const updatedMessages = [...existingMessages, { body: messageBody, received_at: nowISO }];
         const previousPayload = existingExec.trigger_payload && typeof existingExec.trigger_payload === "object"
           ? existingExec.trigger_payload
           : {};
@@ -507,7 +505,6 @@ Deno.serve(async (req) => {
           .from("dm_executions")
           .update({
             messages_received: nextMessageCount,
-            messages: updatedMessages,
             trigger_payload: {
               ...previousPayload,
               ...triggerPayload,
@@ -529,7 +526,6 @@ Deno.serve(async (req) => {
           contact_name: name,
           status: "waiting",
           messages_received: 1,
-          messages: [{ body: messageBody, received_at: nowISO }],
           trigger_payload: triggerPayload,
           resume_at: resumeAt,
           channel: channelParam,

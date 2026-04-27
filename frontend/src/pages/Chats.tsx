@@ -246,14 +246,20 @@ export default function Chats() {
       return;
     }
     const fetchErroredExec = async () => {
-      const { data } = await supabase
-        .from('dm_executions')
-        .select('id, status')
-        .eq('lead_id', selectedLeadGhlId)
-        .order('started_at', { ascending: false })
-        .limit(1)
-        .maybeSingle();
-      setErroredExecutionId(data?.status === 'failed' ? data.id : null);
+      try {
+        const { data, error } = await supabase
+          .from('dm_executions')
+          .select('id, status')
+          .eq('lead_id', selectedLeadGhlId)
+          .order('started_at', { ascending: false })
+          .limit(1)
+          .maybeSingle();
+        if (error) throw error;
+        setErroredExecutionId(data?.status === 'failed' ? data.id : null);
+      } catch (err) {
+        console.warn('fetchErroredExec failed:', err);
+        setErroredExecutionId(null);
+      }
     };
     fetchErroredExec();
   }, [selectedLeadGhlId, credentials?.ghl_location_id, activeError]);
@@ -737,18 +743,26 @@ export default function Chats() {
     fetchLeads();
     fetchReadStatus();
     fetchStarred();
-    // Load saved chat filter config
+    // Load saved chat filter config — must always set filtersReady,
+    // even on RLS denial / network error, or render hangs forever on RetroLoader.
     if (clientId) {
       supabase
         .from('clients')
         .select('crm_filter_config')
         .eq('id', clientId)
         .single()
-        .then(({ data }) => {
-          const config = (data as any)?.crm_filter_config;
-          if (config?.chat_filter && typeof config.chat_filter === 'object') {
-            setChatFilterConfig(prev => ({ ...DEFAULT_FILTER_CONFIG, ...config.chat_filter }));
+        .then(({ data, error }) => {
+          if (error) {
+            console.warn('chat filter config load failed:', error);
+          } else {
+            const config = (data as any)?.crm_filter_config;
+            if (config?.chat_filter && typeof config.chat_filter === 'object') {
+              setChatFilterConfig(prev => ({ ...DEFAULT_FILTER_CONFIG, ...config.chat_filter }));
+            }
           }
+          setFiltersReady(true);
+        }, (err) => {
+          console.warn('chat filter config rejected:', err);
           setFiltersReady(true);
         });
     } else {
@@ -804,41 +818,48 @@ export default function Chats() {
       });
   }, [clientId]);
 
-  // Fetch engagement campaigns for the campaign filter
+  // Fetch engagement campaigns for the campaign filter — must always set
+  // campaignsLoaded=true (even on error) or the page hangs on RetroLoader.
   useEffect(() => {
     if (!clientId) return;
     (async () => {
-      const [{ data: campaignsData }, { data: clientData }] = await Promise.all([
-        (supabase as any)
-          .from('engagement_campaigns')
-          .select('id, name, workflow_id')
-          .eq('client_id', clientId)
-          .not('workflow_id', 'is', null)
-          .order('created_at', { ascending: false }),
-        (supabase as any)
-          .from('clients')
-          .select('crm_filter_config')
-          .eq('id', clientId)
-          .single(),
-      ]);
-      const savedOrder: string[] | undefined = clientData?.crm_filter_config?.conversations_campaign_order;
-      let opts: CampaignOption[] = (campaignsData || []).map((c: any) => ({ id: c.id, name: c.name }));
-      if (savedOrder && savedOrder.length > 0) {
-        const map = new Map(opts.map(o => [o.id, o]));
-        const ordered: CampaignOption[] = [];
-        for (const id of savedOrder) {
-          const item = map.get(id);
-          if (item) { ordered.push(item); map.delete(id); }
+      try {
+        const [{ data: campaignsData }, { data: clientData }] = await Promise.all([
+          (supabase as any)
+            .from('engagement_campaigns')
+            .select('id, name, workflow_id')
+            .eq('client_id', clientId)
+            .not('workflow_id', 'is', null)
+            .order('created_at', { ascending: false }),
+          (supabase as any)
+            .from('clients')
+            .select('crm_filter_config')
+            .eq('id', clientId)
+            .single(),
+        ]);
+        const savedOrder: string[] | undefined = clientData?.crm_filter_config?.conversations_campaign_order;
+        let opts: CampaignOption[] = (campaignsData || []).map((c: any) => ({ id: c.id, name: c.name }));
+        if (savedOrder && savedOrder.length > 0) {
+          const map = new Map(opts.map(o => [o.id, o]));
+          const ordered: CampaignOption[] = [];
+          for (const id of savedOrder) {
+            const item = map.get(id);
+            if (item) { ordered.push(item); map.delete(id); }
+          }
+          map.forEach(v => ordered.push(v));
+          opts = ordered;
         }
-        map.forEach(v => ordered.push(v));
-        opts = ordered;
-      }
-      setCampaigns(opts);
-      setCampaignsLoaded(true);
-      // Restore last selected campaign
-      const lastCampaign = clientData?.crm_filter_config?.last_conversations_campaign;
-      if (lastCampaign && opts.some(o => o.id === lastCampaign)) {
-        setSelectedCampaignId(lastCampaign);
+        setCampaigns(opts);
+        // Restore last selected campaign
+        const lastCampaign = clientData?.crm_filter_config?.last_conversations_campaign;
+        if (lastCampaign && opts.some(o => o.id === lastCampaign)) {
+          setSelectedCampaignId(lastCampaign);
+        }
+      } catch (err) {
+        console.warn('campaigns load failed:', err);
+        setCampaigns([]);
+      } finally {
+        setCampaignsLoaded(true);
       }
     })();
   }, [clientId]);

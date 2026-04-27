@@ -280,10 +280,20 @@ export const processMessages = task({
 
       const ghlReplyUrl = `${client.ghl_send_setter_reply_webhook_url}?Contact_ID=${encodeURIComponent(lead_id)}`;
 
+      // n8n's response has Message_1..5, userID, chat_history — but NO Channel.
+      // The "Send Setter Reply" GHL workflow's "Which Channel?" decision needs
+      // it; without Channel set, the workflow falls to the "None" branch and
+      // no message goes out. Inject Channel from the inbound message_queue row
+      // (uppercase to match GHL decision conditions like 'includes "SMS"').
+      const ghlPayload: Record<string, unknown> = {
+        ...(n8nResponseData as Record<string, unknown>),
+        Channel: channel ? channel.toUpperCase() : "SMS",
+      };
+
       const ghlResponse = await fetch(ghlReplyUrl, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(n8nResponseData),
+        body: JSON.stringify(ghlPayload),
       });
 
       if (!ghlResponse.ok) {

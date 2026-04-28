@@ -78,7 +78,7 @@ export const processMessages = task({
       // Done BEFORE the debounce wait so the lead appears in the CRM immediately.
       const { data: client, error: clientError } = await supabase
         .from("clients")
-        .select("id, text_engine_webhook, ghl_send_setter_reply_webhook_url, supabase_url, supabase_service_key, supabase_table_name")
+        .select("id, text_engine_webhook, ghl_send_setter_reply_webhook_url, supabase_url, supabase_service_key, supabase_table_name, twilio_account_sid, twilio_auth_token, retell_phone_1")
         .eq("ghl_location_id", ghl_account_id)
         .single();
 
@@ -309,6 +309,41 @@ export const processMessages = task({
       }
 
       console.log("Reply forwarded to GHL successfully.");
+
+      // ── STEP 6.1b: Send SMS directly via Twilio (bypass GHL Custom Webhook substitution) ─
+      // GHL's Custom Webhook body doesn't substitute {{contact.phone}} reliably,
+      // so we send each setter message directly using the Twilio REST API.
+      const twilioSid = (client as any).twilio_account_sid as string | null;
+      const twilioAuth = (client as any).twilio_auth_token as string | null;
+      const twilioFrom = (client as any).retell_phone_1 as string | null;
+      if (channel === "sms" && twilioSid && twilioAuth && twilioFrom && contact_phone) {
+        for (const msg of setterMessages) {
+          if (!msg?.trim()) continue;
+          const twilioBody = new URLSearchParams({
+            From: twilioFrom,
+            To: contact_phone,
+            Body: msg,
+          });
+          const twilioRes = await fetch(
+            `https://api.twilio.com/2010-04-01/Accounts/${twilioSid}/Messages.json`,
+            {
+              method: "POST",
+              headers: {
+                "Content-Type": "application/x-www-form-urlencoded",
+                Authorization: `Basic ${Buffer.from(`${twilioSid}:${twilioAuth}`).toString("base64")}`,
+              },
+              body: twilioBody.toString(),
+            }
+          );
+          const twilioJson = (await twilioRes.json()) as { sid?: string; error_code?: number; error_message?: string };
+          if (!twilioRes.ok) {
+            await logError("twilio_sms_error", `Twilio SMS failed: ${twilioJson.error_code} ${twilioJson.error_message}`, { to: contact_phone, error_code: twilioJson.error_code });
+            console.warn(`Twilio SMS failed for msg: ${twilioJson.error_code} ${twilioJson.error_message}`);
+          } else {
+            console.log(`Twilio SMS sent: ${twilioJson.sid} → ${contact_phone}`);
+          }
+        }
+      }
 
       // ── STEP 6.1: Update last_message_preview for conversation list ──────────
       if (setterMessages.length > 0) {

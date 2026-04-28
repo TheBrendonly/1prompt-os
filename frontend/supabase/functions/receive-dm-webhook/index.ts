@@ -381,15 +381,20 @@ Deno.serve(async (req) => {
         }
       }
 
-      // Update last_message_at + preview so the frontend detects the new message via realtime and marks it unread
+      // Upsert lead row + bump last_message_at/preview so the frontend detects the new message
+      const stoppedNameParts = (name || "").split(" ").filter(Boolean);
       await supabase
         .from("leads")
-        .update({
+        .upsert({
+          client_id: client.id,
+          lead_id: contactId,
+          first_name: stoppedNameParts[0] ?? null,
+          last_name: stoppedNameParts.slice(1).join(" ") || null,
+          phone: phone || null,
+          email: email || null,
           last_message_at: nowTimestamp,
           last_message_preview: (messageBody || "").substring(0, 200),
-        })
-        .eq("lead_id", contactId)
-        .eq("client_id", client.id);
+        }, { onConflict: "client_id,lead_id" });
 
       return new Response(
         JSON.stringify({ status: "setter_stopped", message: "Setter is stopped for this lead. Message recorded but AI processing skipped." }),
@@ -464,12 +469,20 @@ Deno.serve(async (req) => {
       console.error("Failed to insert message_queue:", mqError);
     }
 
-    // Write last_message_preview so the frontend can show preview text without querying external DB
+    // Upsert lead row + bump last_message_at/preview so Chats page surfaces the conversation
+    const nameParts = (name || "").split(" ").filter(Boolean);
     await supabase
       .from("leads")
-      .update({ last_message_preview: (messageBody || "").substring(0, 200) })
-      .eq("lead_id", contactId)
-      .eq("client_id", client.id);
+      .upsert({
+        client_id: client.id,
+        lead_id: contactId,
+        first_name: nameParts[0] ?? null,
+        last_name: nameParts.slice(1).join(" ") || null,
+        phone: phone || null,
+        email: email || null,
+        last_message_at: nowISO,
+        last_message_preview: (messageBody || "").substring(0, 200),
+      }, { onConflict: "client_id,lead_id" });
 
     if (!triggerKey) {
       console.error("TRIGGER_SECRET_KEY not set");

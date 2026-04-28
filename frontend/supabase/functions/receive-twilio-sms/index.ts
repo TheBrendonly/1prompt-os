@@ -401,14 +401,19 @@ Deno.serve(async (req) => {
           console.warn("chat_history write failed", e);
         }
       }
+      const stoppedNameParts = (contactName || "").split(" ").filter(Boolean);
       await supabase
         .from("leads")
-        .update({
+        .upsert({
+          client_id: client.id,
+          lead_id: contactId,
+          first_name: stoppedNameParts[0] ?? null,
+          last_name: stoppedNameParts.slice(1).join(" ") || null,
+          phone: fromPhone || null,
+          email: contactEmail || null,
           last_message_at: nowTs,
           last_message_preview: (messageBody || "").substring(0, 200),
-        })
-        .eq("lead_id", contactId)
-        .eq("client_id", client.id);
+        }, { onConflict: "client_id,lead_id" });
       return new Response(TWIML_EMPTY, {
         status: 200,
         headers: { ...corsHeaders, "Content-Type": "text/xml" },
@@ -474,11 +479,19 @@ Deno.serve(async (req) => {
     });
     if (mqError) console.error("message_queue insert failed", mqError);
 
+    const nameParts = (contactName || "").split(" ").filter(Boolean);
     await supabase
       .from("leads")
-      .update({ last_message_preview: (messageBody || "").substring(0, 200) })
-      .eq("lead_id", contactId)
-      .eq("client_id", client.id);
+      .upsert({
+        client_id: client.id,
+        lead_id: contactId,
+        first_name: nameParts[0] ?? null,
+        last_name: nameParts.slice(1).join(" ") || null,
+        phone: fromPhone || null,
+        email: contactEmail || null,
+        last_message_at: nowISO,
+        last_message_preview: (messageBody || "").substring(0, 200),
+      }, { onConflict: "client_id,lead_id" });
 
     if (!triggerKey) {
       console.error("TRIGGER_SECRET_KEY not set");

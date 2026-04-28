@@ -5554,6 +5554,15 @@ const PromptManagement = () => {
   };
 
   // Delete setter (replaces Return to Default)
+  // Trigger the existing delete flow from the list view (no editor entry).
+  // Sets the same context the editor would set, then opens the existing two-step modal.
+  const handleListDelete = (prompt: Prompt, slotId: string) => {
+    if (slotId === 'Setter-1') return; // mirror editor-view protection
+    setEditingPrompt(prompt);
+    setEditingSlotId(slotId);
+    setShowDeleteSetterDialog(true);
+  };
+
   const handleDeleteSetter = async () => {
     if (!clientId || !editingSlotId) return;
     setShowDeleteSetterStep2(false);
@@ -7076,10 +7085,23 @@ const PromptManagement = () => {
 
                           <div className="border-t border-dashed border-border -mx-5" />
 
-                          <Button onClick={() => handleEdit(prompt, slot.id, false)} variant="outline" size="sm" disabled={!hasSupabaseConfig || !hasLLMConfig} className="h-8 gap-2 bg-primary text-primary-foreground hover:bg-primary/80 border-border">
-                            <Edit className="w-4 h-4" />
-                            {isEmpty ? 'Create Setter' : 'Edit Setter'}
-                          </Button>
+                          <div className="flex items-center gap-2">
+                            <Button onClick={() => handleEdit(prompt, slot.id, false)} variant="outline" size="sm" disabled={!hasSupabaseConfig || !hasLLMConfig} className="h-8 gap-2 bg-primary text-primary-foreground hover:bg-primary/80 border-border flex-1">
+                              <Edit className="w-4 h-4" />
+                              {isEmpty ? 'Create Setter' : 'Edit Setter'}
+                            </Button>
+                            {!isEmpty && slot.id !== 'Setter-1' && (
+                              <Button
+                                onClick={(e) => { e.stopPropagation(); handleListDelete(prompt, slot.id); }}
+                                variant="outline"
+                                size="sm"
+                                aria-label="Delete setter"
+                                className="h-8 px-2.5 border-destructive/40 text-destructive hover:bg-destructive/10 hover:text-destructive"
+                              >
+                                <Trash2 className="w-4 h-4" />
+                              </Button>
+                            )}
+                          </div>
                         </div>
                       </Card>;
                 })}
@@ -7151,10 +7173,23 @@ const PromptManagement = () => {
 
                           <div className="border-t border-dashed border-border -mx-5" />
 
-                          <Button onClick={() => handleEdit(prompt, slot.id, true)} variant="outline" size="sm" disabled={!hasSupabaseConfig || !hasLLMConfig} className="h-8 gap-2 bg-primary text-primary-foreground hover:bg-primary/80 border-border">
-                            <Edit className="w-4 h-4" />
-                            {isEmpty ? 'Create Setter' : 'Edit Setter'}
-                          </Button>
+                          <div className="flex items-center gap-2">
+                            <Button onClick={() => handleEdit(prompt, slot.id, true)} variant="outline" size="sm" disabled={!hasSupabaseConfig || !hasLLMConfig} className="h-8 gap-2 bg-primary text-primary-foreground hover:bg-primary/80 border-border flex-1">
+                              <Edit className="w-4 h-4" />
+                              {isEmpty ? 'Create Setter' : 'Edit Setter'}
+                            </Button>
+                            {!isEmpty && slot.id !== 'Setter-1' && (
+                              <Button
+                                onClick={(e) => { e.stopPropagation(); handleListDelete(prompt, slot.id); }}
+                                variant="outline"
+                                size="sm"
+                                aria-label="Delete setter"
+                                className="h-8 px-2.5 border-destructive/40 text-destructive hover:bg-destructive/10 hover:text-destructive"
+                              >
+                                <Trash2 className="w-4 h-4" />
+                              </Button>
+                            )}
+                          </div>
                         </div>
                       </Card>;
                 })}
@@ -7163,6 +7198,68 @@ const PromptManagement = () => {
           </div>}
         </div>
       </div>
+
+      {/* Delete Setter dialogs (also rendered in editor view; here for list-view trash button) */}
+      <Dialog open={showDeleteSetterDialog} onOpenChange={setShowDeleteSetterDialog}>
+        <DialogContent className="max-w-md !p-0">
+          <DialogHeader className="px-6 pt-6" style={{ borderBottom: '3px groove hsl(var(--border-groove))', paddingBottom: '16px' }}>
+            <DialogTitle style={{ fontFamily: "'VT323', monospace", fontSize: '18px', letterSpacing: '1px', textTransform: 'uppercase' }}>
+              DELETE SETTER
+            </DialogTitle>
+          </DialogHeader>
+          <div className="px-6 py-5 space-y-4">
+            <p className="text-muted-foreground leading-relaxed" style={{ fontFamily: "'IBM Plex Mono', monospace", fontSize: '13px' }}>
+              Are you sure you want to permanently delete this setter? This will remove all configuration, prompts, versions, and settings.
+            </p>
+            <p className="text-destructive font-medium" style={{ fontFamily: "'IBM Plex Mono', monospace", fontSize: '13px' }}>
+              This action cannot be undone.
+            </p>
+          </div>
+          <div className="flex gap-3 px-6 pb-6" style={{ borderTop: '3px groove hsl(var(--border-groove))', paddingTop: '16px' }}>
+            <Button variant="default" className="flex-1" onClick={() => setShowDeleteSetterDialog(false)} style={{ fontFamily: "'VT323', monospace", fontSize: '18px', letterSpacing: '0.5px' }}>
+              CANCEL
+            </Button>
+            <Button variant="destructive" className="flex-1" onClick={() => { setShowDeleteSetterDialog(false); setShowDeleteSetterStep2(true); }} style={{ fontFamily: "'VT323', monospace", fontSize: '18px', letterSpacing: '0.5px' }}>
+              CONTINUE
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={showDeleteSetterStep2} onOpenChange={setShowDeleteSetterStep2}>
+        <DialogContent className="max-w-md !p-0">
+          <DialogHeader className="px-6 pt-6" style={{ borderBottom: '3px groove hsl(var(--border-groove))', paddingBottom: '16px' }}>
+            <DialogTitle style={{ fontFamily: "'VT323', monospace", fontSize: '18px', letterSpacing: '1px', textTransform: 'uppercase' }}>
+              FINAL CONFIRMATION
+            </DialogTitle>
+          </DialogHeader>
+          <div className="px-6 py-5 space-y-4">
+            <p className="text-muted-foreground leading-relaxed" style={{ fontFamily: "'IBM Plex Mono', monospace", fontSize: '13px' }}>
+              You are about to permanently delete this setter. Please confirm the details below:
+            </p>
+            <div className="bg-sidebar p-4 space-y-2 groove-border">
+              <div className="flex items-center gap-2">
+                <span className="text-muted-foreground" style={{ fontFamily: "'IBM Plex Mono', monospace", fontSize: '12px' }}>Setter:</span>
+                <span className="text-foreground font-medium" style={{ fontFamily: "'IBM Plex Mono', monospace", fontSize: '13px' }}>{editingSlotId || 'Unknown'}</span>
+              </div>
+            </div>
+            <p className="text-destructive font-medium" style={{ fontFamily: "'IBM Plex Mono', monospace", fontSize: '13px' }}>
+              This action is irreversible. All data for this setter will be permanently deleted.
+            </p>
+          </div>
+          <div className="flex gap-3 px-6 pb-6" style={{ borderTop: '3px groove hsl(var(--border-groove))', paddingTop: '16px' }}>
+            <Button variant="default" className="flex-1" onClick={() => setShowDeleteSetterStep2(false)} style={{ fontFamily: "'VT323', monospace", fontSize: '18px', letterSpacing: '0.5px' }}>
+              CANCEL
+            </Button>
+            <Button variant="destructive" className="flex-1" onClick={handleDeleteSetter} style={{ fontFamily: "'VT323', monospace", fontSize: '18px', letterSpacing: '0.5px' }}>
+              <Trash2 className="w-4 h-4 mr-1.5" />
+              DELETE SETTER
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      <SavingOverlay isVisible={deletingSetter} message="Deleting Setter" variant="fixed" />
 
       {/* Dialogs */}
       <AIPromptDialog open={showAIDialog} onOpenChange={setShowAIDialog} action={aiAction} existingPrompt={selectedPromptForModify} onPromptGenerated={handlePromptGenerated} />

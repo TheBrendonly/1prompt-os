@@ -345,12 +345,15 @@ export const processMessages = task({
         }
       }
 
-      // ── STEP 6.1: Update last_message_preview for conversation list ──────────
+      // ── STEP 6.1: Bump last_message_at + preview for conversation list ──────
       if (setterMessages.length > 0) {
         const preview = setterMessages[0].slice(0, 200);
         await supabase
           .from("leads")
-          .update({ last_message_preview: preview })
+          .update({
+            last_message_preview: preview,
+            last_message_at: new Date().toISOString(),
+          })
           .eq("client_id", client.id)
           .eq("lead_id", lead_id);
       }
